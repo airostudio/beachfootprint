@@ -1,13 +1,12 @@
 "use client";
 
-import Image from "next/image";
 import Link from "next/link";
 import { useState } from "react";
 
 const primaryNav = [
   { label: "Shop", href: "/shop" },
-  { label: "Silicone Dolls", href: "/shop/silicone-dolls" },
-  { label: "Adult Products", href: "/shop/adult-products" },
+  { label: "Dresses & Kimonos", href: "/shop/dresses-kimonos" },
+  { label: "Swim", href: "/shop/swim" },
   { label: "Accessories", href: "/shop/accessories" },
   { label: "Care", href: "/shop/care" },
   { label: "New", href: "/shop/new-arrivals" },
@@ -37,15 +36,8 @@ export default function Header() {
           Menu
         </button>
 
-        <Link href="/" className="relative z-10 h-16 shrink-0 flex items-start" aria-label="Valley Of The Dolls home">
-          <Image
-            src="/valley-logo.png"
-            alt="The Valley of the Dolls"
-            width={2816}
-            height={1536}
-            priority
-            className="h-[100px] w-auto object-contain"
-          />
+        <Link href="/" className="relative z-10 shrink-0 flex items-center" aria-label="Beach Footprints home">
+          <span className="font-serif text-2xl tracking-wide text-ink-950">Beach Footprints</span>
         </Link>
 
         <nav className="hidden lg:flex items-center gap-7">

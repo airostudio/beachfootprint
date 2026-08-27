@@ -73,7 +73,7 @@ export default function CheckoutPage() {
       {placed ? (
         <div className="text-center py-20">
           <h2 className="font-serif text-3xl mb-4">Order placed ✓</h2>
-          <p className="text-stone-500">A confirmation has been sent to your email. Thank you for shopping discreetly with us.</p>
+          <p className="text-stone-500">A confirmation has been sent to your email. Thank you for shopping with us.</p>
         </div>
       ) : (
         <form onSubmit={handleSubmit(() => setPlaced(true))}>
@@ -108,7 +108,7 @@ export default function CheckoutPage() {
                   {errors[f.name] && <p className="text-xs text-red-600 mt-1">{errors[f.name]?.message}</p>}
                 </div>
               ))}
-              <p className="text-xs text-stone-500">Estimated delivery: 3–5 business days via Standard Shipping (discreet, plain packaging).</p>
+              <p className="text-xs text-stone-500">Estimated delivery: 5–12 business days via Standard Shipping.</p>
             </div>
           )}
 
@@ -122,7 +122,7 @@ export default function CheckoutPage() {
                 </label>
               ))}
               <p className="text-xs text-stone-500 pt-2">
-                Card details are handled entirely by our payment processor's secure, tokenised fields — Valley Of The Dolls never stores raw card numbers.
+                Card details are handled entirely by our payment processor's secure, tokenised fields — Beach Footprints never stores raw card numbers.
               </p>
             </div>
           )}

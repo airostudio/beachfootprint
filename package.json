@@ -1,5 +1,5 @@
 {
-  "name": "trend-store",
+  "name": "beach-footprints",
   "private": true,
   "packageManager": "pnpm@9.12.0",
   "workspaces": [
@@ -11,6 +11,11 @@
     "worker": "pnpm -C apps/worker build && node apps/worker/dist/index.js",
     "schema": "pnpm -C packages/db schema",
     "seed": "pnpm -C packages/db seed",
-    "db:types": "pnpm -C packages/db types"
+    "db:types": "pnpm -C packages/db types",
+    "test": "pnpm -C packages/core test",
+    "import:aliexpress": "pnpm -C apps/worker import:aliexpress --",
+    "sync:aliexpress": "pnpm -C apps/worker sync:aliexpress",
+    "fulfill:aliexpress": "pnpm -C apps/worker fulfill:aliexpress --",
+    "sync:tracking": "pnpm -C apps/worker sync:tracking"
   }
 }

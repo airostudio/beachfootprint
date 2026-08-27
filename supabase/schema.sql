@@ -1,5 +1,5 @@
 -- ============================================================
--- Valley Of The Dolls — Supabase Schema
+-- Beach Footprints — Supabase Schema
 -- Run in the Supabase SQL Editor (Dashboard → SQL Editor), or:
 --   supabase db execute -f supabase/schema.sql
 --
@@ -24,7 +24,7 @@ $$;
 create type tenancy_mode        as enum ('SAAS','SELF_HOSTED');
 create type user_role           as enum ('OWNER','ADMIN','MANAGER','SUPPORT','MARKETING','READONLY');
 create type product_status      as enum ('DRAFT','PUBLISHED','ARCHIVED');
-create type product_type        as enum ('STANDARD','CONFIGURABLE','SILICONE_DOLL','ADULT_PRODUCT','ACCESSORY','CARE_PRODUCT','REPLACEMENT_PART','BUNDLE','GIFT_CARD');
+create type product_type        as enum ('STANDARD','ACCESSORY','CARE_PRODUCT','BUNDLE','GIFT_CARD');
 create type shipping_class      as enum ('STANDARD','HEAVY','OVERSIZED','FREIGHT','SPECIAL');
 create type stock_policy        as enum ('IN_STOCK','MADE_TO_ORDER','PREORDER','BACKORDER','DISCONTINUED');
 create type order_status        as enum ('DRAFT','PENDING_PAYMENT','PAID','FULFILLING','FULFILLED','DELIVERED','CANCELED','RETURN_REQUESTED','RETURNED','REFUNDED');
@@ -76,20 +76,6 @@ create table tenant_settings (
   base_currency      text not null default 'USD',
   enabled_currencies text[] not null default array['USD'],
   cookie_consent_enabled boolean not null default true,
-
-  -- Age gate (self-attestation, not legal age verification)
-  age_gate_enabled     boolean not null default true,
-  age_gate_min_age     int not null default 18,
-  age_gate_headline    text not null default 'You must be 18 years or older to enter this website.',
-  age_gate_body        text,
-  age_gate_cookie_days int not null default 30,
-  age_gate_region_rules jsonb, -- { [countryCode]: { minAge: number } }
-
-  -- Discretion / trust
-  discreet_billing_descriptor text,
-  discreet_shipping_enabled   boolean not null default true,
-  discreet_shipping_policy    text,
-  discreet_browsing_default   boolean not null default false,
 
   -- SEO / indexing controls
   seo_allow_indexing       boolean not null default true,
@@ -162,9 +148,7 @@ create trigger trg_customers_updated_at before update on customers
 
 create table customer_privacy_settings (
   customer_id                uuid primary key references customers(id) on delete cascade,
-  discreet_browsing_enabled  boolean not null default false,
   save_recently_viewed       boolean not null default true,
-  shorten_names_in_history   boolean not null default false,
   marketing_opt_in           boolean not null default false
 );
 
@@ -255,8 +239,6 @@ create table products (
   care_instructions     text,
   shipping_restrictions text[] not null default array[]::text[],
 
-  discreet_name_override text,
-
   seo_title    text,
   seo_desc     text,
   og_image_url text,
@@ -315,60 +297,6 @@ create table bundle_items (
   bundle_product_id uuid not null references products(id) on delete cascade,
   child_product_id  uuid not null references products(id) on delete cascade,
   quantity          int not null default 1
-);
-
--- ── Silicone doll configurator ─────────────────────────────────
-
-create table doll_models (
-  id       uuid primary key default gen_random_uuid(),
-  product_id uuid not null unique references products(id) on delete cascade,
-
-  height_cm          double precision,
-  weight_kg          double precision,
-  material           text,
-  skeleton_spec      text,
-  standing_capable   boolean not null default false,
-  heating_compatible boolean not null default false
-);
-
-create table doll_option_groups (
-  id             uuid primary key default gen_random_uuid(),
-  doll_model_id  uuid not null references doll_models(id) on delete cascade,
-  key            text not null, -- body | skin_tone | head | eyes | hair | feature | accessory
-  label          text not null,
-  is_required    boolean not null default true,
-  is_multiselect boolean not null default false,
-  position       int not null default 0,
-  unique (doll_model_id, key)
-);
-
-create table doll_options (
-  id                     uuid primary key default gen_random_uuid(),
-  group_id               uuid not null references doll_option_groups(id) on delete cascade,
-  code                   text not null,
-  label                  text not null,
-  image_url              text,
-  price_delta            int not null default 0, -- cents
-  production_days_delta  int not null default 0,
-  is_default             boolean not null default false,
-  is_active              boolean not null default true,
-  position               int not null default 0,
-  unique (group_id, code)
-);
-
--- Structured rule engine: IF conditionOption is selected THEN
--- allow_only/exclude/require option codes in targetGroup, and/or apply
--- price & lead-time deltas. Mirrors packages/core's evaluateAvailability().
-create table doll_option_rules (
-  id                     uuid primary key default gen_random_uuid(),
-  doll_model_id          uuid not null references doll_models(id) on delete cascade,
-  condition_option_id    uuid not null references doll_options(id) on delete cascade,
-  effect                 text not null check (effect in ('allow_only','exclude','require','price_adjust','lead_time_adjust')),
-  target_group_key       text,
-  target_option_codes    text[] not null default array[]::text[],
-  price_delta            int,
-  lead_time_days_delta   int,
-  note                   text
 );
 
 create table product_variants (
@@ -811,10 +739,6 @@ alter table product_attribute_values enable row level security;
 alter table reviews enable row level security;
 alter table compatibility_links enable row level security;
 alter table bundle_items enable row level security;
-alter table doll_models enable row level security;
-alter table doll_option_groups enable row level security;
-alter table doll_options enable row level security;
-alter table doll_option_rules enable row level security;
 alter table product_variants enable row level security;
 alter table inventory_items enable row level security;
 alter table product_media enable row level security;
@@ -906,26 +830,6 @@ create policy "public reads bundle_items" on bundle_items for select using (true
 create policy "tenant members manage bundle_items" on bundle_items for all
   using (exists (select 1 from products p where p.id = bundle_product_id and is_tenant_member(p.tenant_id)))
   with check (exists (select 1 from products p where p.id = bundle_product_id and is_tenant_member(p.tenant_id)));
-
-create policy "public reads doll_models" on doll_models for select using (true);
-create policy "tenant members manage doll_models" on doll_models for all
-  using (exists (select 1 from products p where p.id = product_id and is_tenant_member(p.tenant_id)))
-  with check (exists (select 1 from products p where p.id = product_id and is_tenant_member(p.tenant_id)));
-
-create policy "public reads doll_option_groups" on doll_option_groups for select using (true);
-create policy "tenant members manage doll_option_groups" on doll_option_groups for all
-  using (exists (select 1 from doll_models dm join products p on p.id = dm.product_id where dm.id = doll_model_id and is_tenant_member(p.tenant_id)))
-  with check (exists (select 1 from doll_models dm join products p on p.id = dm.product_id where dm.id = doll_model_id and is_tenant_member(p.tenant_id)));
-
-create policy "public reads doll_options" on doll_options for select using (true);
-create policy "tenant members manage doll_options" on doll_options for all
-  using (exists (select 1 from doll_option_groups g join doll_models dm on dm.id = g.doll_model_id join products p on p.id = dm.product_id where g.id = group_id and is_tenant_member(p.tenant_id)))
-  with check (exists (select 1 from doll_option_groups g join doll_models dm on dm.id = g.doll_model_id join products p on p.id = dm.product_id where g.id = group_id and is_tenant_member(p.tenant_id)));
-
-create policy "public reads doll_option_rules" on doll_option_rules for select using (true);
-create policy "tenant members manage doll_option_rules" on doll_option_rules for all
-  using (exists (select 1 from doll_models dm join products p on p.id = dm.product_id where dm.id = doll_model_id and is_tenant_member(p.tenant_id)))
-  with check (exists (select 1 from doll_models dm join products p on p.id = dm.product_id where dm.id = doll_model_id and is_tenant_member(p.tenant_id)));
 
 create policy "public reads active variants" on product_variants for select
   using (is_active or exists (select 1 from products p where p.id = product_id and is_tenant_member(p.tenant_id)));

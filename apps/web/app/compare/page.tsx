@@ -5,6 +5,5 @@ export const dynamic = "force-dynamic";
 
 export default async function ComparePage() {
   const products = await getAllProducts();
-  const dolls = products.filter((p) => p.productType === "silicone_doll");
-  return <CompareClient dolls={dolls} />;
+  return <CompareClient products={products} />;
 }

@@ -4,16 +4,12 @@ import { useState } from "react";
 
 export default function PrivacyPage() {
   const [settings, setSettings] = useState({
-    discreetBrowsing: false,
     saveRecentlyViewed: true,
-    shortenNames: false,
     marketingOptIn: false,
   });
 
   const rows: { key: keyof typeof settings; label: string; help: string }[] = [
-    { key: "discreetBrowsing", label: "Discreet browsing", help: "Blur product imagery by default across the storefront until revealed." },
     { key: "saveRecentlyViewed", label: "Save recently viewed products", help: "Turn off to stop the site remembering products you've looked at." },
-    { key: "shortenNames", label: "Shorten product names in history", help: "Use generic labels instead of full product names in recently viewed." },
     { key: "marketingOptIn", label: "Marketing emails", help: "Receive occasional product updates and offers." },
   ];
 

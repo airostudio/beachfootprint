@@ -14,7 +14,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const handle = params.slug?.join("/");
   const category = handle ? await getCategoryByHandle(handle) : undefined;
   const title = category ? category.name : "Shop All";
-  return { title, description: category?.description ?? "Browse the full Valley Of The Dolls catalogue." };
+  return { title, description: category?.description ?? "Browse the full Beach Footprints catalogue." };
 }
 
 export default async function ShopPage({ params }: Props) {
@@ -22,7 +22,7 @@ export default async function ShopPage({ params }: Props) {
 
   if (!handle) {
     const products = await getAllProducts();
-    return <ShopGrid products={products} title="Shop All" description="Every product across the Valley Of The Dolls catalogue." />;
+    return <ShopGrid products={products} title="Shop All" description="Every product across the Beach Footprints catalogue." />;
   }
 
   const category = await getCategoryByHandle(handle);

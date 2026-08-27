@@ -1,5 +1,5 @@
 -- ============================================================
--- Valley Of The Dolls — Storage buckets
+-- Beach Footprints — Storage buckets
 -- Run after supabase/schema.sql, e.g.:
 --   supabase db execute -f supabase/storage.sql
 -- ============================================================

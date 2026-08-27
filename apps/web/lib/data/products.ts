@@ -1,16 +1,11 @@
 import "server-only";
 import { db, getTenantId } from "./client";
 import type { ProductDetail, ProductSpecGroup, ProductSummary, ProductType } from "../types";
-import { getDollConfiguratorForProduct } from "./dolls";
 
 const PRODUCT_TYPE_MAP: Record<string, ProductType> = {
   STANDARD: "standard",
-  CONFIGURABLE: "configurable",
-  SILICONE_DOLL: "silicone_doll",
-  ADULT_PRODUCT: "adult_product",
   ACCESSORY: "accessory",
   CARE_PRODUCT: "care_product",
-  REPLACEMENT_PART: "replacement_part",
   BUNDLE: "bundle",
   GIFT_CARD: "bundle", // no dedicated storefront treatment yet — renders like a bundle
 };
@@ -38,7 +33,6 @@ interface Hydrated {
   variantByProduct: Map<string, { priceCents: number; compareAtCents?: number; currency: string }>;
   mediaByProduct: Map<string, { url: string; alt: string | null }[]>;
   categoryHandlesByProduct: Map<string, string[]>;
-  dollProductIds: Set<string>;
   stockOnHandByProduct: Map<string, number>;
   ratingByProduct: Map<string, { avg: number; count: number }>;
 }
@@ -48,18 +42,16 @@ async function hydrate(productIds: string[]): Promise<Hydrated> {
     variantByProduct: new Map(),
     mediaByProduct: new Map(),
     categoryHandlesByProduct: new Map(),
-    dollProductIds: new Set(),
     stockOnHandByProduct: new Map(),
     ratingByProduct: new Map(),
   };
   if (productIds.length === 0) return empty;
 
   const supabase = db();
-  const [variantsRes, mediaRes, catLinksRes, dollModelsRes, reviewsRes] = await Promise.all([
+  const [variantsRes, mediaRes, catLinksRes, reviewsRes] = await Promise.all([
     supabase.from("product_variants").select("id, product_id, price, compare_at, currency, is_active").in("product_id", productIds),
     supabase.from("product_media").select("product_id, url, alt, position").in("product_id", productIds).order("position"),
     supabase.from("product_categories").select("product_id, categories(handle)").in("product_id", productIds),
-    supabase.from("doll_models").select("product_id").in("product_id", productIds),
     supabase.from("reviews").select("product_id, rating").in("product_id", productIds).eq("is_approved", true),
   ]);
 
@@ -101,8 +93,6 @@ async function hydrate(productIds: string[]): Promise<Hydrated> {
     empty.categoryHandlesByProduct.set(row.product_id, list);
   }
 
-  for (const row of (dollModelsRes.data ?? []) as { product_id: string }[]) empty.dollProductIds.add(row.product_id);
-
   const reviewRows = (reviewsRes.data ?? []) as { product_id: string; rating: number }[];
   const sums = new Map<string, { sum: number; count: number }>();
   for (const row of reviewRows) {
@@ -139,7 +129,6 @@ function toSummary(row: ProductRow, hydrated: Hydrated): ProductSummary {
     isBestSeller: categoryHandles.includes("best-sellers"),
     onSale: categoryHandles.includes("sale") || (variant?.compareAtCents !== undefined && variant.compareAtCents > variant.priceCents),
     readyToShip: row.stock_policy === "IN_STOCK" && stockOnHand > 0,
-    customizable: row.product_type === "CONFIGURABLE" || hydrated.dollProductIds.has(row.id),
     rating: rating?.avg,
     reviewCount: rating?.count,
     tags: [],
@@ -199,51 +188,33 @@ export async function getProductsByCategory(handle: string): Promise<ProductSumm
   return rows.map((r) => toSummary(r, hydrated));
 }
 
-const GENERIC_WHATS_INCLUDED_DOLL = ["Configured doll", "Care instructions booklet", "Storage bag"];
-const GENERIC_WHATS_INCLUDED_OTHER = ["Product", "Charging cable (if applicable)", "Care instructions"];
+const GENERIC_WHATS_INCLUDED = ["Product", "Care instructions"];
 const GENERIC_CARE_SUMMARY =
-  "Clean with warm water and a pH-neutral, fragrance-free cleanser. Air dry fully before storage. Avoid prolonged sun exposure and oil-based lubricants with silicone.";
+  "Hand wash or use a gentle cycle in cool water with a mild, fragrance-free detergent. Air dry out of direct sunlight before storage.";
 const GENERIC_FAQS = [
   {
-    q: "Is packaging discreet?",
-    a: "Yes — all orders ship in plain outer packaging with no product imagery or descriptive text, and a neutral billing descriptor where supported by our payment provider.",
+    q: "How is my order packaged?",
+    a: "Every order ships in simple, unmarked packaging designed to keep your pieces in the same condition they left our workshop.",
   },
   {
     q: "What is your return policy?",
-    a: "Unopened, unused items in original packaging are eligible for return within the window shown at checkout. For hygiene reasons, some categories are final sale once opened — see our Returns guide for details.",
+    a: "Unworn, unwashed items in original packaging are eligible for return within the window shown at checkout — see our Returns guide for details.",
   },
 ];
 
-function deliverySummary(row: ProductRow, isDoll: boolean): string {
-  if (row.stock_policy === "MADE_TO_ORDER" || isDoll) {
-    const days = row.production_days ?? 14;
-    return `Made to order. Production time ${days - 4}–${days + 4} days depending on configuration, then discreet freight delivery in plain packaging.`;
+function deliverySummary(row: ProductRow): string {
+  if (row.stock_policy === "MADE_TO_ORDER") {
+    const days = row.production_days ?? 5;
+    return `Made to order. Production time ${Math.max(1, days - 2)}–${days + 2} days, then standard delivery.`;
   }
   const dispatch = row.dispatch_days ?? 2;
-  return `Ships within ${dispatch} business day${dispatch === 1 ? "" : "s"} in plain, unmarked packaging with no visible branding.`;
+  return `Ships within ${dispatch} business day${dispatch === 1 ? "" : "s"}.`;
 }
 
-function warrantySummary(row: ProductRow, isDoll: boolean): string {
+function warrantySummary(row: ProductRow): string {
   if (row.warranty_details) return row.warranty_details;
-  const months = row.warranty_months ?? (isDoll ? 12 : 3);
-  return `${months}-month limited warranty${isDoll ? " covering skeleton and seams." : " against manufacturing defects."}`;
-}
-
-/** Storefront/admin doll-configurator pages need "a" configurable doll product rather than a hardcoded demo slug — the first published one, by title. */
-export async function getFirstConfigurableDollProduct(): Promise<ProductDetail | undefined> {
-  const tenantId = await getTenantId();
-  const { data } = await db()
-    .from("doll_models")
-    .select("product_id, products!inner(handle, tenant_id, status)")
-    .eq("products.tenant_id", tenantId)
-    .eq("products.status", "PUBLISHED")
-    .limit(1)
-    .maybeSingle();
-  if (!data) return undefined;
-  const row = data as { product_id: string; products: { handle: string } | { handle: string }[] };
-  const productsField = Array.isArray(row.products) ? row.products[0] : row.products;
-  if (!productsField) return undefined;
-  return getProductBySlug(productsField.handle);
+  const months = row.warranty_months ?? 3;
+  return `${months}-month limited warranty against manufacturing defects.`;
 }
 
 export async function getProductBySlug(slug: string): Promise<ProductDetail | undefined> {
@@ -260,16 +231,14 @@ export async function getProductBySlug(slug: string): Promise<ProductDetail | un
   if (!data) return undefined;
   const row = data as ProductRow;
 
-  const [hydrated, specsRes, gallery, dollConfigurator, linksRes] = await Promise.all([
+  const [hydrated, specsRes, gallery, linksRes] = await Promise.all([
     hydrate([row.id]),
     supabase.from("product_specs").select("group, label, value, position").eq("product_id", row.id).order("position"),
     supabase.from("product_media").select("url, alt, position").eq("product_id", row.id).order("position"),
-    getDollConfiguratorForProduct(row.id),
     supabase.from("compatibility_links").select("to_product_id, relation_type").eq("from_product_id", row.id),
   ]);
 
   const summary = toSummary(row, hydrated);
-  const isDoll = summary.productType === "silicone_doll";
 
   const specRows = (specsRes.data ?? []) as { group: string; label: string; value: string }[];
   const specGroups: ProductSpecGroup[] = [];
@@ -286,7 +255,7 @@ export async function getProductBySlug(slug: string): Promise<ProductDetail | un
 
   const linkRows = (linksRes.data ?? []) as { to_product_id: string; relation_type: string }[];
   const accessoryProductIds = linkRows
-    .filter((l) => ["compatible_accessory", "replacement_part", "care_product", "compatible_wig"].includes(l.relation_type))
+    .filter((l) => ["compatible_accessory", "care_product"].includes(l.relation_type))
     .map((l) => l.to_product_id);
   let compatibleAccessorySlugs: string[] = [];
   if (accessoryProductIds.length > 0) {
@@ -318,13 +287,12 @@ export async function getProductBySlug(slug: string): Promise<ProductDetail | un
     gallery: galleryRows.length > 0 ? galleryRows.map((g) => ({ url: g.url, alt: g.alt ?? summary.title })) : [{ url: summary.imageUrl, alt: summary.imageAlt }],
     description: row.description ?? summary.shortDescription,
     specGroups,
-    whatsIncluded: isDoll ? GENERIC_WHATS_INCLUDED_DOLL : GENERIC_WHATS_INCLUDED_OTHER,
+    whatsIncluded: GENERIC_WHATS_INCLUDED,
     careSummary: row.care_instructions ?? GENERIC_CARE_SUMMARY,
-    deliverySummary: deliverySummary(row, isDoll),
-    warrantySummary: warrantySummary(row, isDoll),
+    deliverySummary: deliverySummary(row),
+    warrantySummary: warrantySummary(row),
     faqs: GENERIC_FAQS,
     compatibleAccessorySlugs,
     relatedSlugs,
-    dollConfigurator,
   };
 }

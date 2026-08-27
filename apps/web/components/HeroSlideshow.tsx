@@ -3,22 +3,19 @@
 import Image from "next/image";
 import { useEffect, useState } from "react";
 
-const SLIDE_FILES = [
-  "EIB500-banner-2.webp",
-  "IR-IRONAI-BANNER.webp",
-  "Japanese-Illustrator-sex-doll-161M-A6-ROS-MAX-Kurumi-Silk-Glow.webp",
-  "Lounge-Owner-Sex-Doll-164LN-S19-Pearl-Natural.webp",
-  "Socialite-Beauty-Sex-Doll-158T-S40-Eileen-Silk-Glow.webp",
-  "Young-Series-Sunshine-Traveler-Sex-Doll-166cm-2.0-N01-Mio-Natural.webp",
-  "Young-SeriesBlue-Fairy-Sex-Doll-154cm-N02-Zia-Natural.webp",
+// Real lookbook photography goes in public/hero/ with these filenames (see
+// public/hero/README.md). Until those are supplied, fall back to placeholder
+// imagery so the homepage still renders a slideshow.
+const SLIDES = [
+  { src: "https://picsum.photos/seed/beach-kimono/1920/1080", alt: "Boho kimono on a sandy beach" },
+  { src: "https://picsum.photos/seed/beach-sarong/1920/1080", alt: "Sarong draped over driftwood" },
+  { src: "https://picsum.photos/seed/beach-sandals/1920/1080", alt: "Woven sandals on the shoreline" },
+  { src: "https://picsum.photos/seed/beach-tote/1920/1080", alt: "Woven tote bag at golden hour" },
+  { src: "https://picsum.photos/seed/beach-sunset/1920/1080", alt: "Coastal sunset over the surf" },
 ];
 
 const HOLD_MS = 6000;
 const FADE_MS = 2000;
-
-function altFromFilename(filename: string): string {
-  return filename.replace(/\.[^.]+$/, "").replace(/[-_]+/g, " ");
-}
 
 function shuffle<T>(items: T[]): T[] {
   const arr = [...items];
@@ -35,11 +32,11 @@ function shuffle<T>(items: T[]): T[] {
  * doesn't warn) — the slide list itself is fixed, just its order isn't.
  */
 export default function HeroSlideshow() {
-  const [order, setOrder] = useState(SLIDE_FILES);
+  const [order, setOrder] = useState(SLIDES);
   const [activeIndex, setActiveIndex] = useState(0);
 
   useEffect(() => {
-    setOrder(shuffle(SLIDE_FILES));
+    setOrder(shuffle(SLIDES));
   }, []);
 
   useEffect(() => {
@@ -51,11 +48,11 @@ export default function HeroSlideshow() {
 
   return (
     <div className="absolute inset-0">
-      {order.map((filename, i) => (
+      {order.map((slide, i) => (
         <Image
-          key={filename}
-          src={`/hero/${filename}`}
-          alt={altFromFilename(filename)}
+          key={slide.src}
+          src={slide.src}
+          alt={slide.alt}
           fill
           priority={i === 0}
           sizes="100vw"

@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { getGuides } from "@/lib/data/guides";
 
-export const metadata: Metadata = { title: "Guides", description: "Buying guides, care and material information from Valley Of The Dolls." };
+export const metadata: Metadata = { title: "Guides", description: "Style, care and material guides from Beach Footprints." };
 export const dynamic = "force-dynamic";
 
 export default async function GuidesPage() {
