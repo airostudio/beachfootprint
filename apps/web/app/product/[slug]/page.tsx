@@ -80,16 +80,7 @@ export default async function ProductPage({ params }: Props) {
           <p className="text-sm text-stone-600 leading-relaxed mb-2">{product.shortDescription}</p>
           <p className="text-xs text-stone-500">{product.readyToShip ? "Ready to ship" : "Made to order"}</p>
 
-          {product.dollConfigurator ? (
-            <div className="mt-8 p-6 bg-stone-100 border border-stone-200">
-              <p className="text-sm mb-4">This model is fully configurable — choose body, skin, face, eyes, hair and more.</p>
-              <Link href={`/build-your-doll?model=${product.id}`} className="btn-primary">
-                Configure This Model
-              </Link>
-            </div>
-          ) : (
-            <AddToCartActions priceCents={product.priceCents} currency={product.currency} />
-          )}
+          <AddToCartActions priceCents={product.priceCents} currency={product.currency} />
 
           <ProductTabs product={product} />
         </div>

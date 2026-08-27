@@ -11,34 +11,26 @@ const questions = [
     key: "shopping_for",
     label: "What are you shopping for?",
     options: [
-      { value: "silicone_doll", label: "A silicone doll" },
-      { value: "adult_product", label: "An adult product" },
+      { value: "standard", label: "Apparel" },
       { value: "accessory", label: "An accessory" },
+      { value: "care_product", label: "A care product" },
     ],
   },
   {
     key: "price_range",
     label: "Preferred price range",
     options: [
-      { value: "0-100", label: "Under $100" },
-      { value: "100-500", label: "$100–$500" },
-      { value: "500-2500", label: "$500+" },
-    ],
-  },
-  {
-    key: "experience",
-    label: "Beginner or experienced?",
-    options: [
-      { value: "beginner", label: "Beginner" },
-      { value: "experienced", label: "Experienced" },
+      { value: "0-50", label: "Under $50" },
+      { value: "50-100", label: "$50–$100" },
+      { value: "100-250", label: "$100+" },
     ],
   },
   {
     key: "readiness",
-    label: "Ready-to-ship or custom?",
+    label: "Ready-to-ship or made to order?",
     options: [
       { value: "ready_to_ship", label: "Ready to ship" },
-      { value: "custom", label: "Happy to wait for something custom" },
+      { value: "made_to_order", label: "Happy to wait for something made to order" },
     ],
   },
 ] as const;
@@ -54,10 +46,7 @@ export default function ProductFinderClient({ products }: { products: ProductSum
       priceCents: p.priceCents,
       category: p.productType,
       material: p.material,
-      heightCm: p.heightCm,
       readyToShip: Boolean(p.readyToShip),
-      customizable: Boolean(p.customizable),
-      beginnerFriendly: !p.customizable,
       tags: p.tags,
     }));
     return new DeterministicRecommendationProvider(catalog);

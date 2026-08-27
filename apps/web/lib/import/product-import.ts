@@ -59,12 +59,8 @@ function toCents(dollars: string | undefined): number | undefined {
 
 const PRODUCT_TYPES = new Set([
   "STANDARD",
-  "CONFIGURABLE",
-  "SILICONE_DOLL",
-  "ADULT_PRODUCT",
   "ACCESSORY",
   "CARE_PRODUCT",
-  "REPLACEMENT_PART",
   "BUNDLE",
   "GIFT_CARD",
 ]);

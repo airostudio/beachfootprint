@@ -6,11 +6,10 @@ import type { ProductSummary } from "@/lib/types";
 export interface Filters {
   materials: string[];
   readyToShipOnly: boolean;
-  customizableOnly: boolean;
   maxPriceCents: number | null;
 }
 
-const emptyFilters: Filters = { materials: [], readyToShipOnly: false, customizableOnly: false, maxPriceCents: null };
+const emptyFilters: Filters = { materials: [], readyToShipOnly: false, maxPriceCents: null };
 
 export function useFilteredProducts(products: ProductSummary[]) {
   const [filters, setFilters] = useState<Filters>(emptyFilters);
@@ -23,7 +22,6 @@ export function useFilteredProducts(products: ProductSummary[]) {
   const filtered = products.filter((p) => {
     if (filters.materials.length && (!p.material || !filters.materials.includes(p.material))) return false;
     if (filters.readyToShipOnly && !p.readyToShip) return false;
-    if (filters.customizableOnly && !p.customizable) return false;
     if (filters.maxPriceCents !== null && p.priceCents > filters.maxPriceCents) return false;
     return true;
   });
@@ -91,14 +89,6 @@ export default function FilterSidebar({
               onChange={(e) => onChange({ ...filters, readyToShipOnly: e.target.checked })}
             />
             Ready to ship
-          </label>
-          <label className="flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              checked={filters.customizableOnly}
-              onChange={(e) => onChange({ ...filters, customizableOnly: e.target.checked })}
-            />
-            Customisable
           </label>
         </div>
       </div>

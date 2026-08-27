@@ -1,11 +1,10 @@
-# WooCommerce product-export → Valley Of The Dolls importer CSV
+# WooCommerce product-export → Beach Footprints importer CSV
 
-Converts a WooCommerce product-export `.xlsx` (e.g. IronTech Doll's own
-export, under an authorized reseller/distributor relationship) into the CSV
-format `apps/web/lib/import/product-import.ts` — and therefore
+Converts a WooCommerce product-export `.xlsx` into the CSV format
+`apps/web/lib/import/product-import.ts` — and therefore
 `/admin/products/import` — already expects.
 
-This is a much better source than scraping: it's the manufacturer's own
+This is a much better source than scraping: it's the source store's own
 structured product data (real prices, real hosted image URLs, real
 descriptions), not something reconstructed by guessing at page markup.
 
@@ -22,20 +21,15 @@ any size via the existing chunked pipeline.
 ## What it does
 
 - **Classifies `product_type`** from the title + WooCommerce category path:
-  care items (glue, cleansing oil, repair gel, ...) → `CARE_PRODUCT`; stands,
-  flight cases, connectors, wigs, anything explicitly tagged "Accessories" →
-  `ACCESSORY`; torsos → `SILICONE_DOLL` (category `silicone-dolls/torso`);
-  anything else tagged "Sex Doll"/"Life Size" → `SILICONE_DOLL`
-  (`silicone-dolls/full-body`); everything else → `ADULT_PRODUCT`. All
-  keyword matching is **word-boundary**, not substring — a naive substring
-  check on `"stand"` originally matched inside `"Standard Series"` (present
-  on nearly every doll's categories) and misclassified 133/593 real dolls
-  as accessories before this was fixed.
+  care items (cleaner, detergent, repair spray, ...) → `CARE_PRODUCT`; bags,
+  totes, hats, belts, jewelry, anything explicitly tagged "Accessories" →
+  `ACCESSORY`; everything else → `STANDARD`. All keyword matching is
+  **word-boundary**, not substring, to avoid false positives against
+  unrelated words that happen to contain a keyword.
 - **Parses the spec table** WooCommerce descriptions here embed as an HTML
-  `<table>` (Material, Height, Shoulder Width, Breastline, ...) to populate
-  `material`/`height_cm` accurately, rather than guessing from the title.
-  Falls back to the "Shop By Material" category and a `\d+cm` regex on the
-  title when a product has no spec table.
+  `<table>` (Material, Fabric, ...) to populate `material` accurately,
+  rather than guessing from the title. Falls back to the "Shop By Material"
+  category when a product has no spec table.
 - **Strips HTML** from descriptions, including a literal `\n` (backslash-n
   as two characters, not a real newline) artifact baked into the source
   export's table markup.
@@ -46,16 +40,11 @@ any size via the existing chunked pipeline.
   published state — review pricing, wording, and category assignment for
   *this* store before publishing each one.
 - `category_handles` only ever references handles already seeded in
-  `supabase/seed.sql` (`silicone-dolls`, `silicone-dolls/full-body`,
-  `silicone-dolls/torso`, `accessories`, `care`, `adult-products`) — if the
-  real category taxonomy differs, adjust
-  `classify_product_type_and_categories()`.
+  `supabase/seed.sql` (`dresses-kimonos`, `swim`, `accessories`, `care`,
+  `new-arrivals`, `best-sellers`, `sale`, `bundles`) — if the real category
+  taxonomy differs, adjust `classify_product_type_and_categories()`.
 
 ## Verified
 
-Run against a real 593-row IronTech export: output round-trips exactly
-through the actual TypeScript CSV chunk parser
-(`packages/core/src/csv.ts`) used by the live importer — 591 rows (1 header
-+ 590 products), 0 leftover bytes, 0 column-count mismatches. Product-type
-distribution after fixes: 546 `SILICONE_DOLL`, 29 `ACCESSORY`, 11
-`CARE_PRODUCT`, 4 `ADULT_PRODUCT`.
+Output round-trips exactly through the actual TypeScript CSV chunk parser
+(`packages/core/src/csv.ts`) used by the live importer.

@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 """
-Converts a WooCommerce product-export .xlsx (e.g. from irontechdoll.com,
-under an authorized reseller/distributor relationship) into the CSV format
-apps/web's /admin/products/import already understands — see
+Converts a WooCommerce product-export .xlsx into the CSV format apps/web's
+/admin/products/import already understands — see
 apps/web/lib/import/product-import.ts for the column contract this mirrors.
 
 Usage:
@@ -28,9 +27,8 @@ PRODUCT_CSV_COLUMNS = [
     "brand", "material", "height_cm", "status", "image_urls",
 ]
 
-CARE_KEYWORDS = ["glue", "cleansing oil", "stain remover", "repair", "gel", "makeup remover", "powder"]
-ACCESSORY_KEYWORDS = ["stand", "flight case", "connector", "adaptor", "adapter", "wig", "accessories", "accessory"]
-TORSO_KEYWORDS = ["torso", "waist down", "lower body"]
+CARE_KEYWORDS = ["cleaner", "detergent", "stain remover", "repair", "spray", "conditioner", "wash"]
+ACCESSORY_KEYWORDS = ["bag", "tote", "hat", "belt", "jewelry", "jewellery", "accessories", "accessory"]
 
 # Not real catalog products — WooCommerce order-adjustment/test placeholder
 # rows that occasionally end up exported alongside the real catalogue.
@@ -79,9 +77,7 @@ def parse_spec_table(html: str) -> dict:
 
 
 def _matches_any(haystack: str, keywords: list[str]) -> bool:
-    # Word-boundary matching, not naive substring `in` — a naive check made
-    # "stand" match inside "Standard Series" (present on nearly every doll's
-    # categories), misclassifying 133/593 real dolls as ACCESSORY.
+    # Word-boundary matching, not naive substring `in`.
     return any(re.search(rf"\b{re.escape(kw)}\b", haystack) for kw in keywords)
 
 
@@ -92,22 +88,18 @@ def classify_product_type_and_categories(name: str, categories: str) -> tuple[st
         return "CARE_PRODUCT", "care"
     if _matches_any(haystack, ACCESSORY_KEYWORDS):
         return "ACCESSORY", "accessories"
-    if _matches_any(haystack, TORSO_KEYWORDS):
-        return "SILICONE_DOLL", "silicone-dolls|silicone-dolls/torso"
-    if "sex doll" in haystack or "life size" in haystack:
-        return "SILICONE_DOLL", "silicone-dolls|silicone-dolls/full-body"
-    return "ADULT_PRODUCT", "adult-products"
+    return "STANDARD", "new-arrivals"
 
 
 def extract_material(name: str, categories: str, specs: dict) -> str:
-    for key in ("material", "materials"):
+    for key in ("material", "materials", "fabric"):
         if key in specs and specs[key]:
             return specs[key]
     if not isinstance(categories, str):
         return ""
     match = re.search(r"Shop By Material\s*>\s*([^,]+)", categories)
     if match:
-        return match.group(1).replace(" Sex Doll", "").strip()
+        return match.group(1).strip()
     return ""
 
 
@@ -167,7 +159,7 @@ def convert(input_path: str, output_path: str, brand: str) -> None:
             "description": strip_html(row.get("Description")),
             "price": "" if pd.isna(price) else str(price),
             "compare_at": "" if compare_at == "" or pd.isna(compare_at) else str(compare_at),
-            "sku": f"IT-{int(wc_id)}" if pd.notna(wc_id) else "",
+            "sku": f"WC-{int(wc_id)}" if pd.notna(wc_id) else "",
             "stock_on_hand": "",
             "category_handles": category_handles,
             "brand": brand,
@@ -188,7 +180,7 @@ def convert(input_path: str, output_path: str, brand: str) -> None:
     print("By product_type:", type_counts)
     print("\nAll rows import as status=DRAFT — review in /admin/products before publishing.")
     print("category_handles only reference handles already seeded in supabase/seed.sql")
-    print("(silicone-dolls, silicone-dolls/full-body, silicone-dolls/torso, accessories, care, adult-products);")
+    print("(dresses-kimonos, swim, accessories, care, new-arrivals, best-sellers, sale, bundles);")
     print("re-run classify_product_type_and_categories() adjustments here if your real taxonomy differs.")
 
 
@@ -196,7 +188,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("input", help="Path to the WooCommerce product-export .xlsx")
     parser.add_argument("-o", "--output", default="products.csv", help="Output CSV path (default: products.csv)")
-    parser.add_argument("--brand", default="IronTech Doll", help="Brand value to stamp on every row")
+    parser.add_argument("--brand", default="", help="Brand value to stamp on every row")
     args = parser.parse_args()
 
     try:

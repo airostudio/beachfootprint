@@ -28,7 +28,7 @@ export async function listTenantIds(db: ReturnType<typeof getDb>): Promise<strin
 }
 
 export async function resolveTenantId(db: ReturnType<typeof getDb>, tenantIdOrSlug?: string): Promise<string> {
-  const defaultSlug = process.env.DEFAULT_TENANT_SLUG || "valley-of-the-dolls-demo";
+  const defaultSlug = process.env.DEFAULT_TENANT_SLUG || "beach-footprints-demo";
   if (tenantIdOrSlug && /^[0-9a-f-]{36}$/i.test(tenantIdOrSlug)) return tenantIdOrSlug;
 
   const { data, error } = await db

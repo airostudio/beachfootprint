@@ -6,17 +6,15 @@ import type { ProductSummary } from "@/lib/types";
 
 const comparableRows: { label: string; get: (p: ProductSummary) => string }[] = [
   { label: "Price", get: (p) => formatMoney(p.priceCents, p.currency) },
-  { label: "Height", get: (p) => (p.heightCm ? `${p.heightCm} cm` : "—") },
   { label: "Material", get: (p) => p.material ?? "—" },
   { label: "Ready to ship", get: (p) => (p.readyToShip ? "Yes" : "Made to order") },
-  { label: "Customisable", get: (p) => (p.customizable ? "Yes" : "No") },
   { label: "Rating", get: (p) => (p.rating ? `${p.rating.toFixed(1)} ★ (${p.reviewCount})` : "—") },
 ];
 
-export default function CompareClient({ dolls }: { dolls: ProductSummary[] }) {
-  const [selectedIds, setSelectedIds] = useState<string[]>(dolls.slice(0, 2).map((p) => p.id));
+export default function CompareClient({ products }: { products: ProductSummary[] }) {
+  const [selectedIds, setSelectedIds] = useState<string[]>(products.slice(0, 2).map((p) => p.id));
 
-  const selected = dolls.filter((p) => selectedIds.includes(p.id));
+  const selected = products.filter((p) => selectedIds.includes(p.id));
 
   function toggle(id: string) {
     setSelectedIds((prev) => {
@@ -31,12 +29,12 @@ export default function CompareClient({ dolls }: { dolls: ProductSummary[] }) {
       <h1 className="font-serif text-4xl mb-3">Compare Products</h1>
       <p className="text-stone-500 mb-8 text-sm">Select up to 3 products.</p>
 
-      {dolls.length === 0 ? (
-        <p className="text-sm text-stone-500">No silicone doll products in the catalogue yet.</p>
+      {products.length === 0 ? (
+        <p className="text-sm text-stone-500">No products in the catalogue yet.</p>
       ) : (
         <>
           <div className="flex flex-wrap gap-2 mb-10">
-            {dolls.map((p) => (
+            {products.map((p) => (
               <button
                 key={p.id}
                 onClick={() => toggle(p.id)}

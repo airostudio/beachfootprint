@@ -14,8 +14,8 @@ function humanize(segment: string): string {
  * tenant BEFORE those rows' products get inserted and linked to them — the
  * import must create categories first, so a product never lands with a
  * dangling/missing category reference. A "/"-nested handle (e.g.
- * "silicone-dolls/torso") auto-creates its ancestors too, shallowest first
- * ("silicone-dolls" before "silicone-dolls/torso"), matching how
+ * "dresses-kimonos/sale") auto-creates its ancestors too, shallowest first
+ * ("dresses-kimonos" before "dresses-kimonos/sale"), matching how
  * apps/web/lib/data/categories.ts derives parent/child from parent_id.
  * Existing categories are left untouched — only missing ones get created,
  * named from the handle's last segment.

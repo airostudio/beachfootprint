@@ -17,7 +17,7 @@ export interface ShippingMethodConfig {
  * Database-configured flat-rate/threshold shipping. Suitable as the default
  * provider before a live carrier integration (e.g. EasyPost, Shippo) is
  * connected. Respects per-method shipping-class and country restrictions so
- * oversized/freight doll shipments aren't quoted the same as a small
+ * oversized/freight shipments aren't quoted the same as a small
  * accessory, and so excluded regions never see a rate.
  */
 export class FlatRateShippingProvider implements ShippingProvider {

@@ -1,13 +1,7 @@
-import type { DollConfiguratorModel } from "@trend/core";
-
 export type ProductType =
   | "standard"
-  | "configurable"
-  | "silicone_doll"
-  | "adult_product"
   | "accessory"
   | "care_product"
-  | "replacement_part"
   | "bundle";
 
 export interface Category {
@@ -40,12 +34,10 @@ export interface ProductSummary {
   isBestSeller?: boolean;
   onSale?: boolean;
   readyToShip?: boolean;
-  customizable?: boolean;
   rating?: number;
   reviewCount?: number;
   tags: string[];
   material?: string;
-  heightCm?: number;
   isIndexable?: boolean;
 }
 
@@ -60,5 +52,4 @@ export interface ProductDetail extends ProductSummary {
   faqs: { q: string; a: string }[];
   compatibleAccessorySlugs: string[];
   relatedSlugs: string[];
-  dollConfigurator?: DollConfiguratorModel;
 }

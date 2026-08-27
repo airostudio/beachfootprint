@@ -163,7 +163,7 @@ export default function ProductImportPage() {
         <div className="border border-stone-200 p-6 mb-8">
           <p className="text-xs font-medium mb-2">What this does</p>
           <p className="text-xs text-stone-500 leading-relaxed">
-            Upload a WooCommerce product-export .xlsx directly (e.g. from IronTech). Converted server-side into the
+            Upload a WooCommerce product-export .xlsx directly. Converted server-side into the
             same import format — product type and category are classified from the title and WooCommerce categories,
             material/height are parsed from the embedded spec table, and every row lands as{" "}
             <span className="font-medium">DRAFT</span> for review before publishing. Images are referenced from the

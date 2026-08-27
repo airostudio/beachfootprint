@@ -1,9 +1,9 @@
 import type { TransactionalEmail } from "../types";
 
 /**
- * Transactional email adapter. Sender identity/wording for discreet
- * communications is resolved by the provider implementation from
- * merchant-configured settings, never hardcoded in the calling code.
+ * Transactional email adapter. Sender identity/wording is resolved by the
+ * provider implementation from merchant-configured settings, never
+ * hardcoded in the calling code.
  */
 export interface EmailProvider {
   id: string;

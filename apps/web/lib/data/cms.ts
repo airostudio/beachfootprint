@@ -11,10 +11,10 @@ export interface HeroBanner {
 }
 
 const FALLBACK_HERO: Omit<HeroBanner, "id"> = {
-  headline: "Private. Premium. Personal.",
-  body: "Premium adult products, silicone dolls and accessories through a discreet shopping experience built around privacy, quality and choice.",
-  primaryCta: { label: "Shop Products", href: "/shop" },
-  secondaryCta: { label: "Design Your Doll", href: "/build-your-doll" },
+  headline: "Warm Sand, Salt Air, Slow Days",
+  body: "Boho surf-culture apparel and accessories — woven, hand-dyed and built for barefoot mornings.",
+  primaryCta: { label: "Shop New Arrivals", href: "/shop/new-arrivals" },
+  secondaryCta: { label: "Shop All", href: "/shop" },
 };
 
 interface BannerRow {

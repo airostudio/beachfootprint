@@ -22,9 +22,8 @@ export const PRODUCT_CSV_COLUMNS = [
   "brand", "material", "height_cm", "status", "image_urls",
 ] as const satisfies readonly (keyof ProductCsvRecord)[];
 
-const CARE_KEYWORDS = ["glue", "cleansing oil", "stain remover", "repair", "gel", "makeup remover", "powder"];
-const ACCESSORY_KEYWORDS = ["stand", "flight case", "connector", "adaptor", "adapter", "wig", "accessories", "accessory"];
-const TORSO_KEYWORDS = ["torso", "waist down", "lower body"];
+const CARE_KEYWORDS = ["cleaner", "detergent", "stain remover", "repair", "spray", "conditioner", "wash"];
+const ACCESSORY_KEYWORDS = ["bag", "tote", "hat", "belt", "jewelry", "jewellery", "accessories", "accessory"];
 
 // Not real catalog products — WooCommerce order-adjustment/test placeholder
 // rows that occasionally end up exported alongside the real catalogue.
@@ -40,9 +39,7 @@ function slugify(input: string): string {
     .replace(/(^-|-$)/g, "");
 }
 
-// Word-boundary matching, not naive substring — a naive check made "stand"
-// match inside "Standard Series" (present on nearly every doll's
-// categories), misclassifying most real dolls as accessories.
+// Word-boundary matching, not naive substring matching.
 function matchesAny(haystack: string, keywords: string[]): boolean {
   return keywords.some((kw) => new RegExp(`\\b${kw.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`).test(haystack));
 }
@@ -52,11 +49,7 @@ function classifyProductTypeAndCategory(name: string, categories: string): { pro
 
   if (matchesAny(haystack, CARE_KEYWORDS)) return { productType: "CARE_PRODUCT", categoryHandles: "care" };
   if (matchesAny(haystack, ACCESSORY_KEYWORDS)) return { productType: "ACCESSORY", categoryHandles: "accessories" };
-  if (matchesAny(haystack, TORSO_KEYWORDS)) return { productType: "SILICONE_DOLL", categoryHandles: "silicone-dolls|silicone-dolls/torso" };
-  if (haystack.includes("sex doll") || haystack.includes("life size")) {
-    return { productType: "SILICONE_DOLL", categoryHandles: "silicone-dolls|silicone-dolls/full-body" };
-  }
-  return { productType: "ADULT_PRODUCT", categoryHandles: "adult-products" };
+  return { productType: "STANDARD", categoryHandles: "new-arrivals" };
 }
 
 // The source export has a literal backslash-n (two characters, not a real
@@ -95,10 +88,10 @@ function parseSpecTable(html: string): Map<string, string> {
 }
 
 function extractMaterial(categories: string, specs: Map<string, string>): string {
-  const fromSpec = specs.get("material") || specs.get("materials");
+  const fromSpec = specs.get("material") || specs.get("materials") || specs.get("fabric");
   if (fromSpec) return fromSpec;
   const match = categories.match(/Shop By Material\s*>\s*([^,]+)/);
-  return match ? match[1].replace(" Sex Doll", "").trim() : "";
+  return match ? match[1].trim() : "";
 }
 
 function extractHeight(name: string, specs: Map<string, string>): string {
@@ -190,10 +183,10 @@ export async function convertWooCommerceWorkbook(buffer: Buffer): Promise<WooCom
       description: stripHtml(descriptionHtml),
       price,
       compare_at: compareAt,
-      sku: wcId ? `IT-${wcId}` : "",
+      sku: wcId ? `WC-${wcId}` : "",
       stock_on_hand: "",
       category_handles: categoryHandles,
-      brand: "IronTech Doll",
+      brand: "",
       material: extractMaterial(categories, specs),
       height_cm: extractHeight(name, specs),
       status: "DRAFT",

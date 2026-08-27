@@ -4,10 +4,10 @@ import { useState } from "react";
 import type { ProductSummary } from "@/lib/types";
 
 const careTopics = [
-  { title: "Cleaning", body: "Use warm water with a pH-neutral, fragrance-free cleanser. Rinse thoroughly and pat dry with a lint-free cloth." },
-  { title: "Storage", body: "Store in a cool, dry place away from direct sunlight. Use the included storage bag or a breathable dust cover." },
-  { title: "Maintenance schedule", body: "A light full clean after each use, with a deeper maintenance pass monthly for regularly used items." },
-  { title: "Safe compatible products", body: "Water-based lubricants and silicone-safe cleansers only — avoid oil-based or silicone-based lubricants on silicone products." },
+  { title: "Washing", body: "Hand wash or use a gentle machine cycle in cool water with a mild, fragrance-free detergent. Avoid bleach and harsh wringing." },
+  { title: "Drying", body: "Line dry out of direct sunlight where possible — sun and heat fade natural dyes and weathered fibres over time." },
+  { title: "Storage", body: "Store folded in a cool, dry place away from direct sunlight. Woven and straw pieces do best with a breathable dust bag." },
+  { title: "Salt & sand", body: "Rinse swimwear and woven accessories in fresh water after ocean use, and let sand dry fully before brushing it off." },
 ];
 
 export default function CareClient({ products }: { products: ProductSummary[] }) {

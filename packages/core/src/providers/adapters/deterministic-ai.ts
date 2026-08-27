@@ -4,12 +4,9 @@ import type { AIRecommendation, AIRecommendationRequest, AIProductAnswer } from 
 export interface FinderProductFacts {
   productId: string;
   priceCents: number;
-  category: string; // "silicone_doll" | "adult_product" | "accessory" | ...
+  category: string; // "standard" | "accessory" | "care_product" | "bundle" | ...
   material?: string;
-  heightCm?: number;
   readyToShip: boolean;
-  customizable: boolean;
-  beginnerFriendly: boolean;
   tags: string[];
 }
 
@@ -37,7 +34,6 @@ export class DeterministicRecommendationProvider implements AIProvider {
     const shoppingFor = answerValue(answers, "shopping_for");
     const priceRange = answerValue(answers, "price_range") as string | undefined;
     const materialPref = answerValue(answers, "material") as string | undefined;
-    const experience = answerValue(answers, "experience") as string | undefined;
     const readiness = answerValue(answers, "readiness") as string | undefined;
     const priorities = (answerValue(answers, "priorities") as string[] | undefined) ?? [];
 
@@ -59,17 +55,9 @@ export class DeterministicRecommendationProvider implements AIProvider {
         score += 15;
         reasons.push("Preferred material");
       }
-      if (experience === "beginner" && p.beginnerFriendly) {
-        score += 15;
-        reasons.push("Beginner friendly");
-      }
       if (readiness === "ready_to_ship" && p.readyToShip) {
         score += 15;
         reasons.push("Ready to ship");
-      }
-      if (readiness === "custom" && p.customizable) {
-        score += 15;
-        reasons.push("Fully customisable");
       }
       for (const priority of priorities) {
         if (p.tags.includes(priority)) {
