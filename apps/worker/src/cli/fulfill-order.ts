@@ -1,5 +1,5 @@
 // npm run fulfill:aliexpress -- --order-id=<localOrderId>
-import { placeAliExpressOrder } from "@trend/core";
+import { placeAliExpressOrder } from "@trend/core/fulfillment";
 import { getAliExpressClient, getDb, parseArgs } from "../lib/env";
 
 async function main() {

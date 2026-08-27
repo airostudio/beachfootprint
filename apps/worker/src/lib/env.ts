@@ -1,5 +1,5 @@
 import { createServiceRoleSupabaseClient } from "@trend/db";
-import { AliExpressClient } from "@trend/core";
+import { AliExpressClient } from "@trend/core/aliexpress";
 
 export function getDb() {
   return createServiceRoleSupabaseClient();

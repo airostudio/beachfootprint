@@ -1,5 +1,5 @@
-import { runDailyCatalogSync } from "@trend/core";
-import type { CatalogSyncSummary } from "@trend/core";
+import { runDailyCatalogSync } from "@trend/core/fulfillment";
+import type { CatalogSyncSummary } from "@trend/core/fulfillment";
 import { getAliExpressClient, getDb, listTenantIds } from "../lib/env";
 
 /** Runs the daily AliExpress catalog reconciliation for every tenant. Scheduled at 02:00 UTC — see queue.ts. */

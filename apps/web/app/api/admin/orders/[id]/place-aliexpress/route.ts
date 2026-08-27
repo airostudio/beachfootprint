@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { createServiceRoleSupabaseClient } from "@trend/db";
-import { AliExpressClient, placeAliExpressOrder } from "@trend/core";
+import { AliExpressClient } from "@trend/core/aliexpress";
+import { placeAliExpressOrder } from "@trend/core/fulfillment";
 
 export const runtime = "nodejs";
 

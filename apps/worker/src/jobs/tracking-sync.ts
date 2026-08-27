@@ -1,5 +1,6 @@
-import { ConsoleEmailProvider, pollTrackingUpdates } from "@trend/core";
-import type { TrackingSyncSummary } from "@trend/core";
+import { ConsoleEmailProvider } from "@trend/core";
+import { pollTrackingUpdates } from "@trend/core/fulfillment";
+import type { TrackingSyncSummary } from "@trend/core/fulfillment";
 import { getAliExpressClient, getDb, listTenantIds } from "../lib/env";
 
 const emailProvider = new ConsoleEmailProvider();

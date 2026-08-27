@@ -1,5 +1,5 @@
 // npm run import:aliexpress -- --id=<productId> [--tenant=<slug-or-id>] [--margin=0.35] [--publish]
-import { importProductFromAliExpress } from "@trend/core";
+import { importProductFromAliExpress } from "@trend/core/fulfillment";
 import { getAliExpressClient, getDb, parseArgs, resolveTenantId } from "../lib/env";
 
 async function main() {
