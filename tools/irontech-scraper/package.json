@@ -1,0 +1,21 @@
+{
+  "name": "irontech-scraper",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "scrape": "tsx src/scrape.ts",
+    "upload-images": "tsx src/upload-images.ts",
+    "apply-hero": "tsx src/apply-hero.ts"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.45.4",
+    "dotenv": "^16.4.5",
+    "playwright": "^1.47.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.5.4"
+  }
+}
