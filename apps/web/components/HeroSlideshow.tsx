@@ -3,15 +3,12 @@
 import Image from "next/image";
 import { useEffect, useState } from "react";
 
-// Real lookbook photography goes in public/hero/ with these filenames (see
-// public/hero/README.md). Until those are supplied, fall back to placeholder
-// imagery so the homepage still renders a slideshow.
+// Real lookbook photography lives in public/hero/ (see public/hero/README.md).
+// Add more slides here as more photos come in.
 const SLIDES = [
   { src: "/hero/beach-hero1.jpg", alt: "Woman in a white boho maxi dress walking along the shoreline at golden hour" },
   { src: "/hero/beach-hero2.jpg", alt: "White lace maxi dress hanging on a rattan peacock chair at the water's edge" },
   { src: "/hero/beach-hero3.jpg", alt: "Woman in a floral boho maxi dress sitting in a rattan peacock chair on the shoreline" },
-  { src: "https://picsum.photos/seed/beach-tote/1920/1080", alt: "Woven tote bag at golden hour" },
-  { src: "https://picsum.photos/seed/beach-sunset/1920/1080", alt: "Coastal sunset over the surf" },
 ];
 
 const HOLD_MS = 6000;
