@@ -5,6 +5,7 @@ import { registerAliExpressRoutes } from "./routes/aliexpress";
 import { registerProductRoutes } from "./routes/products";
 import { registerOrderRoutes } from "./routes/orders";
 import { registerConfigRoutes } from "./routes/config";
+import { registerSyncRoutes } from "./routes/sync";
 
 declare module "fastify" {
   interface FastifyRequest {
@@ -32,6 +33,7 @@ export function buildServer(db: SupabaseClient): FastifyInstance {
   registerProductRoutes(app, db);
   registerOrderRoutes(app, db);
   registerConfigRoutes(app, db);
+  registerSyncRoutes(app, db);
 
   return app;
 }

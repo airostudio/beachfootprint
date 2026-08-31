@@ -11,7 +11,7 @@ const STORE_ID = "store-1";
 
 function seedStore(db: FakeSupabase) {
   db.seed("aliexpress_connections", [{ store_id: STORE_ID, app_key: "k", app_secret: "s", access_token: "a", refresh_token: "r" }]);
-  db.seed("product_mappings", [{ id: "mapping-1", store_id: STORE_ID, aliexpress_product_id: "1005006123456", aliexpress_sku_id: "sku-1" }]);
+  db.seed("product_mappings", [{ id: "mapping-1", store_id: STORE_ID, external_variant_id: "variant-1", aliexpress_product_id: "1005006123456", aliexpress_sku_id: "sku-1" }]);
 }
 
 const ADDRESS = { fullName: "Jamie Rivera", line1: "1 Ocean Ave", city: "Santa Cruz", region: "CA", postalCode: "95060", country: "US", phone: "+14085551234" };
@@ -28,7 +28,7 @@ describe("fulfillOrder", () => {
       storeId: STORE_ID,
       externalOrderId: "order-1",
       shippingAddress: ADDRESS,
-      lineItems: [{ mappingId: "mapping-1", quantity: 2 }],
+      lineItems: [{ externalVariantId: "variant-1", quantity: 2 }],
     });
 
     expect(result.skipped).toBe(false);
@@ -45,8 +45,8 @@ describe("fulfillOrder", () => {
     const fetchImpl = vi.fn().mockResolvedValue(jsonResponse(orderCreateFixture));
     vi.stubGlobal("fetch", fetchImpl);
 
-    await fulfillOrder(db, { storeId: STORE_ID, externalOrderId: "order-1", shippingAddress: ADDRESS, lineItems: [{ mappingId: "mapping-1", quantity: 1 }] });
-    const second = await fulfillOrder(db, { storeId: STORE_ID, externalOrderId: "order-1", shippingAddress: ADDRESS, lineItems: [{ mappingId: "mapping-1", quantity: 1 }] });
+    await fulfillOrder(db, { storeId: STORE_ID, externalOrderId: "order-1", shippingAddress: ADDRESS, lineItems: [{ externalVariantId: "variant-1", quantity: 1 }] });
+    const second = await fulfillOrder(db, { storeId: STORE_ID, externalOrderId: "order-1", shippingAddress: ADDRESS, lineItems: [{ externalVariantId: "variant-1", quantity: 1 }] });
 
     expect(second.skipped).toBe(true);
     expect(second.aliexpressOrderId).toBe("8123456789012345");

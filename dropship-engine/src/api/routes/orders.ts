@@ -17,7 +17,7 @@ const addressSchema = z.object({
 const fulfillSchema = z.object({
   externalOrderId: z.string().min(1),
   shippingAddress: addressSchema,
-  lineItems: z.array(z.object({ mappingId: z.string().uuid(), quantity: z.number().int().positive() })).min(1),
+  lineItems: z.array(z.object({ externalVariantId: z.string().min(1), quantity: z.number().int().positive() })).min(1),
   logisticsServiceName: z.string().optional(),
 });
 

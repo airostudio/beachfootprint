@@ -23,7 +23,8 @@ export interface FulfillOrderParams {
   storeId: string;
   externalOrderId: string;
   shippingAddress: Address;
-  lineItems: Array<{ mappingId: string; quantity: number }>;
+  /** externalVariantId — the store's own variant/SKU id, the same one it passed to createMapping. Never the engine's internal mapping id, so a store never has to track anything engine-internal. */
+  lineItems: Array<{ externalVariantId: string; quantity: number }>;
   logisticsServiceName?: string;
 }
 
@@ -91,8 +92,9 @@ export async function fulfillOrder(db: SupabaseClient, params: FulfillOrderParam
   try {
     const { data: mappings, error: mappingsError } = await db
       .from("product_mappings")
-      .select("id, aliexpress_product_id, aliexpress_sku_id")
-      .in("id", params.lineItems.map((li) => li.mappingId));
+      .select("id, external_variant_id, aliexpress_product_id, aliexpress_sku_id")
+      .eq("store_id", params.storeId)
+      .in("external_variant_id", params.lineItems.map((li) => li.externalVariantId));
     if (mappingsError) throw new Error(mappingsError.message);
     if (!mappings || mappings.length === 0) throw new Error("No product mappings found for this order's line items");
 
@@ -101,8 +103,8 @@ export async function fulfillOrder(db: SupabaseClient, params: FulfillOrderParam
       outOrderId: orderId,
       logisticsAddress: toAliExpressAddress(params.shippingAddress),
       items: params.lineItems.map((li) => {
-        const mapping = mappings.find((m) => m.id === li.mappingId);
-        if (!mapping) throw new Error(`Line item references unknown mapping ${li.mappingId}`);
+        const mapping = mappings.find((m) => m.external_variant_id === li.externalVariantId);
+        if (!mapping) throw new Error(`Line item references a variant with no mapping: ${li.externalVariantId}`);
         return {
           productId: mapping.aliexpress_product_id as string,
           skuId: mapping.aliexpress_sku_id as string,

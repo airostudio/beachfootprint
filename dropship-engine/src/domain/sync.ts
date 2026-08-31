@@ -34,7 +34,7 @@ export async function runCatalogSync(db: SupabaseClient, client: AliExpressClien
 
   const { data: mappings } = await db
     .from("product_mappings")
-    .select("id, aliexpress_product_id, aliexpress_sku_id, pricing_rule_id, supplier_cost_cents, retail_price_cents, is_active")
+    .select("id, external_product_id, external_variant_id, aliexpress_product_id, aliexpress_sku_id, pricing_rule_id, supplier_cost_cents, retail_price_cents, is_active")
     .eq("store_id", storeId);
 
   const byProduct = new Map<string, typeof mappings>();
@@ -102,7 +102,8 @@ export async function runCatalogSync(db: SupabaseClient, client: AliExpressClien
           margin_rate: diff.marginRate,
         });
         await notifyStore(db, storeId, "product.price_changed", {
-          mappingId: mapping.id,
+          externalProductId: mapping.external_product_id,
+          externalVariantId: mapping.external_variant_id,
           previousPriceCents: diff.previousPriceCents,
           newPriceCents: diff.newPriceCents,
         });
@@ -112,11 +113,11 @@ export async function runCatalogSync(db: SupabaseClient, client: AliExpressClien
       if (wasActive && sku.sku_available_stock === 0) {
         await db.from("product_mappings").update({ is_active: false }).eq("id", mapping.id);
         summary.markedOutOfStock += 1;
-        await notifyStore(db, storeId, "product.out_of_stock", { mappingId: mapping.id });
+        await notifyStore(db, storeId, "product.out_of_stock", { externalProductId: mapping.external_product_id, externalVariantId: mapping.external_variant_id });
       } else if (!wasActive && sku.sku_available_stock > 0) {
         await db.from("product_mappings").update({ is_active: true }).eq("id", mapping.id);
         summary.restocked += 1;
-        await notifyStore(db, storeId, "product.restocked", { mappingId: mapping.id, stockOnHand: sku.sku_available_stock });
+        await notifyStore(db, storeId, "product.restocked", { externalProductId: mapping.external_product_id, externalVariantId: mapping.external_variant_id, stockOnHand: sku.sku_available_stock });
       }
     }
   }

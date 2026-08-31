@@ -1,62 +1,55 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { buildAuthorizeUrl, exchangeAuthorizationCode } from "@trend/core/aliexpress";
+import { connectAliExpressApp, exchangeAuthorizationCode, getAuthorizeUrl } from "@/lib/dropshipEngine";
 
 export const runtime = "nodejs";
 
-function requiredEnv(name: string): string {
-  const value = process.env[name];
-  if (!value) throw new Error(`Missing required environment variable: ${name}`);
-  return value;
+/**
+ * Proxies the one-time AliExpress OAuth bootstrap to the dropship-engine
+ * (see /dropship-engine's README) — Beach Footprints' own admin password
+ * gates this route, and DROPSHIP_ENGINE_API_KEY (never the AliExpress app
+ * credentials themselves) is the only secret this app holds for it.
+ *
+ * PUT  /api/admin/aliexpress/auth { appKey, appSecret }
+ *   -> registers this store's AliExpress Open Platform app with the engine.
+ * GET  /api/admin/aliexpress/auth?redirectUri=<callback>
+ *   -> { authorizeUrl } — visit it, log in, approve.
+ * POST /api/admin/aliexpress/auth { code, redirectUri }
+ *   -> { connected: true } once the engine has exchanged the code.
+ */
+const connectSchema = z.object({ appKey: z.string().min(1), appSecret: z.string().min(1) });
+
+export async function PUT(request: Request) {
+  const parsed = connectSchema.safeParse(await request.json().catch(() => ({})));
+  if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
+
+  try {
+    return NextResponse.json(await connectAliExpressApp(parsed.data));
+  } catch (error) {
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Could not save AliExpress app credentials" }, { status: 502 });
+  }
 }
 
-/**
- * One-time AliExpress OAuth bootstrap, run from the deployed environment so
- * ALIEXPRESS_APP_KEY/ALIEXPRESS_APP_SECRET never have to leave Vercel's own
- * env vars (unlike the equivalent `auth:aliexpress` CLI, which needs them
- * set wherever it runs). Deliberately doesn't use AliExpressClient.fromEnv()
- * — this route runs before ALIEXPRESS_ACCESS_TOKEN/ALIEXPRESS_REFRESH_TOKEN
- * exist, so it only touches the two OAuth helper functions that don't need
- * them.
- *
- * GET  /api/admin/aliexpress/auth?redirectUri=<callback>
- *   -> { authorizeUrl } — visit it, log in, approve; AliExpress redirects to
- *      redirectUri with ?code=...
- * POST /api/admin/aliexpress/auth { code, redirectUri }
- *   -> { accessToken, refreshToken, expiresAt } — copy accessToken/refreshToken
- *      into ALIEXPRESS_ACCESS_TOKEN/ALIEXPRESS_REFRESH_TOKEN.
- */
 export async function GET(request: Request) {
   const redirectUri = new URL(request.url).searchParams.get("redirectUri");
   if (!redirectUri) return NextResponse.json({ error: "Missing redirectUri query param" }, { status: 400 });
 
   try {
-    const authorizeUrl = buildAuthorizeUrl({ appKey: requiredEnv("ALIEXPRESS_APP_KEY"), redirectUri });
-    return NextResponse.json({ authorizeUrl });
+    return NextResponse.json(await getAuthorizeUrl(redirectUri));
   } catch (error) {
-    return NextResponse.json({ error: error instanceof Error ? error.message : "Could not build authorize URL" }, { status: 500 });
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Could not build authorize URL" }, { status: 502 });
   }
 }
 
-const bodySchema = z.object({
-  code: z.string().min(1),
-  redirectUri: z.string().min(1),
-});
+const callbackSchema = z.object({ code: z.string().min(1), redirectUri: z.string().min(1) });
 
 export async function POST(request: Request) {
-  const parsed = bodySchema.safeParse(await request.json().catch(() => ({})));
+  const parsed = callbackSchema.safeParse(await request.json().catch(() => ({})));
   if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
 
   try {
-    const tokens = await exchangeAuthorizationCode({
-      appKey: requiredEnv("ALIEXPRESS_APP_KEY"),
-      appSecret: requiredEnv("ALIEXPRESS_APP_SECRET"),
-      code: parsed.data.code,
-      redirectUri: parsed.data.redirectUri,
-    });
-    return NextResponse.json(tokens);
+    return NextResponse.json(await exchangeAuthorizationCode(parsed.data));
   } catch (error) {
-    const message = error instanceof Error ? error.message : "AliExpress token exchange failed";
-    return NextResponse.json({ error: message }, { status: 502 });
+    return NextResponse.json({ error: error instanceof Error ? error.message : "AliExpress token exchange failed" }, { status: 502 });
   }
 }

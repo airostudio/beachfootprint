@@ -49,10 +49,13 @@ Everything else — actually creating the product listing, writing the order, ru
      -> { id, supplierCostCents, retailPriceCents }
    GET  /v1/products/mappings/:externalProductId
 
-   POST /v1/orders/fulfill       { externalOrderId, shippingAddress, lineItems: [{ mappingId, quantity }] }
+   POST /v1/orders/fulfill       { externalOrderId, shippingAddress, lineItems: [{ externalVariantId, quantity }] }
      -> { orderId, skipped, aliexpressOrderId, fulfillmentStatus }   (idempotent — retry-safe)
    GET  /v1/orders/:externalOrderId
    ```
+   Line items reference `externalVariantId` — the store's own variant id, never the engine's internal mapping id, so a store never has to track anything engine-internal.
+
+   For an admin "sync now" button: `POST /v1/sync/catalog` / `POST /v1/sync/tracking` run the scheduled jobs on demand for just the calling store and return the summary synchronously (webhooks fire before the response comes back).
 
 Every request needs `Authorization: Bearer <apiKey>` except `GET /v1/health`.
 

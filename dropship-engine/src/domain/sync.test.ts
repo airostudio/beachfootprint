@@ -16,7 +16,7 @@ describe("runCatalogSync", () => {
     const db = new FakeSupabase() as any;
     db.seed("stores", [{ id: STORE_ID, webhook_url: "https://store.example.com/webhooks/dropship", webhook_secret: "a-very-long-webhook-secret" }]);
     db.seed("product_mappings", [
-      { id: "mapping-1", store_id: STORE_ID, aliexpress_product_id: "1005006123456", aliexpress_sku_id: "12000030123456789", pricing_rule_id: null, supplier_cost_cents: 1600, retail_price_cents: 2195, is_active: true },
+      { id: "mapping-1", store_id: STORE_ID, external_product_id: "product-1", external_variant_id: "variant-1", aliexpress_product_id: "1005006123456", aliexpress_sku_id: "12000030123456789", pricing_rule_id: null, supplier_cost_cents: 1600, retail_price_cents: 2195, is_active: true },
     ]);
 
     const raised = JSON.parse(JSON.stringify(productGetFixture));
@@ -36,6 +36,10 @@ describe("runCatalogSync", () => {
     const [url, init] = webhookFetch.mock.calls[0];
     expect(url).toBe("https://store.example.com/webhooks/dropship");
     expect(init.headers["X-Dropship-Event"]).toBe("product.price_changed");
+    const payload = JSON.parse(init.body);
+    expect(payload.data.externalVariantId).toBe("variant-1");
+    expect(payload.data.externalProductId).toBe("product-1");
+    expect(payload.data.mappingId).toBeUndefined(); // never leak the engine's internal id to a store
 
     vi.unstubAllGlobals();
   });
@@ -44,7 +48,7 @@ describe("runCatalogSync", () => {
     const db = new FakeSupabase() as any;
     db.seed("stores", [{ id: STORE_ID, webhook_url: "https://store.example.com/webhooks/dropship", webhook_secret: "a-very-long-webhook-secret" }]);
     db.seed("product_mappings", [
-      { id: "mapping-1", store_id: STORE_ID, aliexpress_product_id: "1005006123456", aliexpress_sku_id: "12000030123456789", pricing_rule_id: null, supplier_cost_cents: 1600, retail_price_cents: 2195, is_active: true },
+      { id: "mapping-1", store_id: STORE_ID, external_product_id: "product-1", external_variant_id: "variant-1", aliexpress_product_id: "1005006123456", aliexpress_sku_id: "12000030123456789", pricing_rule_id: null, supplier_cost_cents: 1600, retail_price_cents: 2195, is_active: true },
     ]);
 
     const soldOut = JSON.parse(JSON.stringify(productGetFixture));
@@ -58,7 +62,11 @@ describe("runCatalogSync", () => {
 
     expect(summary.markedOutOfStock).toBe(1);
     expect(db.rows("product_mappings")[0].is_active).toBe(false);
-    expect(webhookFetch.mock.calls.some(([, init]: any) => init.headers["X-Dropship-Event"] === "product.out_of_stock")).toBe(true);
+    const outOfStockCall = webhookFetch.mock.calls.find(([, init]: any) => init.headers["X-Dropship-Event"] === "product.out_of_stock");
+    expect(outOfStockCall).toBeDefined();
+    const payload = JSON.parse(outOfStockCall![1].body);
+    expect(payload.data.externalVariantId).toBe("variant-1");
+    expect(payload.data.mappingId).toBeUndefined();
 
     vi.unstubAllGlobals();
   });

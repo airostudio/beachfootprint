@@ -1,42 +1,22 @@
 import { NextResponse } from "next/server";
-import { z } from "zod";
-import { createServiceRoleSupabaseClient } from "@trend/db";
-import { ConsoleEmailProvider } from "@trend/core";
-import { AliExpressClient } from "@trend/core/aliexpress";
-import { pollTrackingUpdates } from "@trend/core/fulfillment";
-import { resolveTenantId } from "@/lib/import/tenant";
+import { triggerTrackingSync } from "@/lib/dropshipEngine";
 
 export const runtime = "nodejs";
 
-const bodySchema = z.object({
-  tenant: z.string().optional(),
-});
-
-/** Manually triggers a tracking poll for every in-flight AliExpress order — the same work the every-4-6-hours background job does, exposed for on-demand/admin-triggered use. */
-export async function POST(request: Request) {
-  const parsed = bodySchema.safeParse(await request.json().catch(() => ({})));
-  if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
-
-  const supabase = createServiceRoleSupabaseClient();
-  const tenantId = await resolveTenantId(supabase, parsed.data.tenant);
-  const emailProvider = new ConsoleEmailProvider();
-
+/**
+ * Manually triggers a tracking poll for every in-flight AliExpress order —
+ * the same work the dropship-engine's scheduled every-5-hours job does, for
+ * on-demand/admin-triggered use. The engine applies the actual updates by
+ * calling back into POST /api/webhooks/dropship-engine (order.shipped /
+ * order.delivered) before this request returns, so Beach Footprints' own
+ * `orders` rows are already current by the time this responds.
+ */
+export async function POST() {
   try {
-    const client = AliExpressClient.fromEnv();
-    const summary = await pollTrackingUpdates(supabase, client, { tenantId }, async (event) => {
-      const { data: order } = await supabase.from("orders").select("id, customers(email)").eq("id", event.orderId).single();
-      const customerEmail = (order as any)?.customers?.email;
-      if (!customerEmail) return;
-      await emailProvider.sendTransactionalEmail({
-        to: customerEmail,
-        templateKey: "order-shipped",
-        subject: "Your Beach Footprints order has shipped",
-        data: { orderId: event.orderId, trackingNumber: event.trackingNumber, carrier: event.carrier, trackingUrl: event.trackingUrl },
-      });
-    });
+    const summary = await triggerTrackingSync();
     return NextResponse.json(summary);
   } catch (error) {
-    const message = error instanceof Error ? error.message : "AliExpress tracking sync failed";
+    const message = error instanceof Error ? error.message : "Tracking sync failed";
     return NextResponse.json({ error: message }, { status: 502 });
   }
 }
