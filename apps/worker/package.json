@@ -6,7 +6,8 @@
     "import:aliexpress": "tsx src/cli/import-product.ts",
     "sync:aliexpress": "tsx src/cli/sync-catalog.ts",
     "fulfill:aliexpress": "tsx src/cli/fulfill-order.ts",
-    "sync:tracking": "tsx src/cli/sync-tracking.ts"
+    "sync:tracking": "tsx src/cli/sync-tracking.ts",
+    "auth:aliexpress": "tsx src/cli/aliexpress-auth.ts"
   },
   "dependencies": {
     "bullmq": "^5.22.0",

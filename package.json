@@ -16,6 +16,7 @@
     "import:aliexpress": "pnpm -C apps/worker import:aliexpress --",
     "sync:aliexpress": "pnpm -C apps/worker sync:aliexpress",
     "fulfill:aliexpress": "pnpm -C apps/worker fulfill:aliexpress --",
-    "sync:tracking": "pnpm -C apps/worker sync:tracking"
+    "sync:tracking": "pnpm -C apps/worker sync:tracking",
+    "auth:aliexpress": "pnpm -C apps/worker auth:aliexpress --"
   }
 }

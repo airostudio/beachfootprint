@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { createHmac } from "node:crypto";
-import { AliExpressApiError, AliExpressClient } from "./client";
+import { AliExpressApiError, AliExpressClient, buildAuthorizeUrl, exchangeAuthorizationCode } from "./client";
 import productGetFixture from "./__fixtures__/product-get.json";
 import orderCreateFixture from "./__fixtures__/order-create.json";
 import orderGetShippedFixture from "./__fixtures__/order-get-shipped.json";
@@ -131,5 +131,47 @@ describe("AliExpressClient.queryTrackingInfo", () => {
     expect(tracking.logisticsNo).toBe("LP00123456789CN");
     expect(tracking.events).toHaveLength(2);
     expect(tracking.events[1].location).toBe("Los Angeles, US");
+  });
+});
+
+describe("buildAuthorizeUrl", () => {
+  it("builds an authorization_code OAuth URL with the app key and redirect URI", () => {
+    const url = buildAuthorizeUrl({ appKey: "app-key", redirectUri: "https://example.com/callback" });
+    const parsed = new URL(url);
+
+    expect(parsed.origin + parsed.pathname).toBe("https://api-sg.aliexpress.com/oauth/authorize");
+    expect(parsed.searchParams.get("response_type")).toBe("code");
+    expect(parsed.searchParams.get("client_id")).toBe("app-key");
+    expect(parsed.searchParams.get("redirect_uri")).toBe("https://example.com/callback");
+  });
+});
+
+describe("exchangeAuthorizationCode", () => {
+  it("exchanges an OAuth code for the initial access/refresh token pair", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(
+      jsonResponse({ access_token: "first-access-token", refresh_token: "first-refresh-token", expires_in: 3600 }),
+    );
+
+    const tokens = await exchangeAuthorizationCode({
+      appKey: "app-key",
+      appSecret: "app-secret",
+      code: "the-oauth-code",
+      redirectUri: "https://example.com/callback",
+      fetchImpl,
+    });
+
+    expect(tokens.accessToken).toBe("first-access-token");
+    expect(tokens.refreshToken).toBe("first-refresh-token");
+    const requestedUrl = new URL(fetchImpl.mock.calls[0][0] as string);
+    expect(requestedUrl.searchParams.get("grant_type")).toBe("authorization_code");
+    expect(requestedUrl.searchParams.get("code")).toBe("the-oauth-code");
+  });
+
+  it("throws AliExpressApiError when the exchange fails", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(jsonResponse({ error_response: { code: "invalid_code", msg: "code expired or already used" } }));
+
+    await expect(
+      exchangeAuthorizationCode({ appKey: "app-key", appSecret: "app-secret", code: "stale-code", fetchImpl }),
+    ).rejects.toBeInstanceOf(AliExpressApiError);
   });
 });

@@ -40,9 +40,67 @@ export interface AliExpressClientConfig extends AliExpressCredentials {
 
 const DEFAULT_GATEWAY_URL = "https://api-sg.aliexpress.com/sync";
 const DEFAULT_TOKEN_URL = "https://api-sg.aliexpress.com/rest/auth/token/create";
+const DEFAULT_AUTHORIZE_URL = "https://api-sg.aliexpress.com/oauth/authorize";
 
 /** Error sub_codes the platform returns for an expired/invalid access token — worth one refresh-and-retry. */
 const EXPIRED_TOKEN_MARKERS = ["isv.invalid-access-token", "access_token", "expired", "isv.invalid_grant"];
+
+async function parseTokenResponse(res: Response, errorCode: string, errorMessage: string): Promise<TokenSet> {
+  const json = (await res.json()) as {
+    access_token?: string;
+    refresh_token?: string;
+    expires_in?: number;
+    error_response?: { code?: string; msg?: string };
+  };
+  if (!json.access_token || !json.refresh_token) {
+    throw new AliExpressApiError(json.error_response?.code ?? errorCode, json.error_response?.msg ?? errorMessage, json);
+  }
+  return {
+    accessToken: json.access_token,
+    refreshToken: json.refresh_token,
+    expiresAt: Date.now() + (json.expires_in ?? 0) * 1000,
+  };
+}
+
+/**
+ * Builds the URL to send a merchant to for the one-time OAuth authorization
+ * step (they log into the AliExpress account being integrated and approve
+ * access). AliExpress redirects back to `redirectUri` with a `?code=...`
+ * query param — pass that code to `exchangeAuthorizationCode` to get the
+ * initial access/refresh token pair. See apps/worker/src/cli/aliexpress-auth.ts.
+ */
+export function buildAuthorizeUrl(params: { appKey: string; redirectUri: string; authorizeUrl?: string }): string {
+  const query = new URLSearchParams({
+    response_type: "code",
+    client_id: params.appKey,
+    redirect_uri: params.redirectUri,
+    sp: "ae",
+  });
+  return `${params.authorizeUrl ?? DEFAULT_AUTHORIZE_URL}?${query.toString()}`;
+}
+
+export interface ExchangeAuthorizationCodeParams {
+  appKey: string;
+  appSecret: string;
+  code: string;
+  redirectUri?: string;
+  tokenUrl?: string;
+  fetchImpl?: typeof fetch;
+}
+
+/** One-time exchange of the `code` from the OAuth redirect for the initial ALIEXPRESS_ACCESS_TOKEN/ALIEXPRESS_REFRESH_TOKEN pair. */
+export async function exchangeAuthorizationCode(params: ExchangeAuthorizationCodeParams): Promise<TokenSet> {
+  const fetchImpl = params.fetchImpl ?? fetch;
+  const query = new URLSearchParams({
+    grant_type: "authorization_code",
+    client_id: params.appKey,
+    client_secret: params.appSecret,
+    code: params.code,
+    ...(params.redirectUri ? { redirect_uri: params.redirectUri } : {}),
+  });
+  const res = await fetchImpl(`${params.tokenUrl ?? DEFAULT_TOKEN_URL}?${query.toString()}`, { method: "POST" });
+  return parseTokenResponse(res, "token_exchange_failed", "AliExpress did not return tokens for this authorization code");
+}
 
 /**
  * AliExpress Open Platform / Dropshipping API client.
@@ -143,26 +201,9 @@ export class AliExpressClient {
       refresh_token: this.refreshToken,
     });
     const res = await this.fetchImpl(`${this.tokenUrl}?${params.toString()}`, { method: "POST" });
-    const json = (await res.json()) as {
-      access_token?: string;
-      refresh_token?: string;
-      expires_in?: number;
-      error_response?: { code?: string; msg?: string };
-    };
-    if (!json.access_token || !json.refresh_token) {
-      throw new AliExpressApiError(
-        json.error_response?.code ?? "token_refresh_failed",
-        json.error_response?.msg ?? "AliExpress token refresh did not return new tokens",
-        json,
-      );
-    }
-    this.accessToken = json.access_token;
-    this.refreshToken = json.refresh_token;
-    const tokens: TokenSet = {
-      accessToken: this.accessToken,
-      refreshToken: this.refreshToken,
-      expiresAt: Date.now() + (json.expires_in ?? 0) * 1000,
-    };
+    const tokens = await parseTokenResponse(res, "token_refresh_failed", "AliExpress token refresh did not return new tokens");
+    this.accessToken = tokens.accessToken;
+    this.refreshToken = tokens.refreshToken;
     await this.onTokenRefreshed?.(tokens);
     return tokens;
   }
