@@ -1,11 +1,6 @@
-Homepage hero slideshow images (see `components/HeroSlideshow.tsx`). Expected filenames:
+Homepage hero slideshow images (see `components/HeroSlideshow.tsx`).
 
-- beach-kimono-01.webp
-- beach-sarong-02.webp
-- beach-sandals-03.webp
-- beach-tote-04.webp
-- beach-sunset-05.webp
-
-Drop the actual boho surf-lifestyle lookbook photos in here with these exact
-names. Until real photos are added, `HeroSlideshow.tsx` falls back to
-placeholder imagery so the homepage still renders.
+- `beach-hero1.jpg` — in place (woman in a white boho maxi dress on the shoreline at golden hour).
+- 4 more slides are still on placeholder imagery (`picsum.photos`) in `HeroSlideshow.tsx`. Drop
+  real boho surf-lifestyle lookbook photos in here and update the corresponding `src` in the
+  `SLIDES` array to point at them — no other code changes needed.

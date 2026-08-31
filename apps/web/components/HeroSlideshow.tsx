@@ -7,7 +7,7 @@ import { useEffect, useState } from "react";
 // public/hero/README.md). Until those are supplied, fall back to placeholder
 // imagery so the homepage still renders a slideshow.
 const SLIDES = [
-  { src: "https://picsum.photos/seed/beach-kimono/1920/1080", alt: "Boho kimono on a sandy beach" },
+  { src: "/hero/beach-hero1.jpg", alt: "Woman in a white boho maxi dress walking along the shoreline at golden hour" },
   { src: "https://picsum.photos/seed/beach-sarong/1920/1080", alt: "Sarong draped over driftwood" },
   { src: "https://picsum.photos/seed/beach-sandals/1920/1080", alt: "Woven sandals on the shoreline" },
   { src: "https://picsum.photos/seed/beach-tote/1920/1080", alt: "Woven tote bag at golden hour" },
