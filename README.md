@@ -1,6 +1,6 @@
 # Beach Footprints
 
-A boho surf-culture lifestyle e-commerce platform — apparel and accessories, editorial lookbook feel (warm sand, terracotta, sage ocean, surf foam, driftwood tones), sourced via an AliExpress dropshipping pipeline.
+A boho surf-culture lifestyle e-commerce platform — apparel and accessories, editorial lookbook feel (warm sand, terracotta, sage ocean, surf foam, driftwood tones), sourced via an AliExpress dropshipping pipeline. Beach Footprints is the **pilot store** for `dropship-engine`, a store-agnostic dropshipping backend (own repo-in-progress — see `/dropship-engine`) that any storefront platform can connect to; this app talks to it over REST + webhooks like any other connected store would, never through a shared database.
 
 ## Stack
 
@@ -9,23 +9,25 @@ A boho surf-culture lifestyle e-commerce platform — apparel and accessories, e
 - `packages/db` — a thin `@supabase/supabase-js` client wrapper (browser + service-role factories)
 - `packages/core` — provider abstractions (payment, shipping, email, AI), decoupled from any single vendor
 - Zod + React Hook Form for validated forms (checkout)
-- `apps/worker` — background job scaffold (BullMQ)
+- `apps/worker` — background job scaffold (BullMQ) — no longer where AliExpress sync lives (see `/dropship-engine`)
+- `/dropship-engine` — the AliExpress dropshipping backend this store is a client of. A separate, self-contained project; see its own README.
 
 ## Structure
 
 ```
 apps/web          Storefront + admin (Next.js App Router)
-apps/worker       Background jobs: AliExpress catalog/tracking sync (BullMQ) + CLI scripts
+                  lib/dropshipEngine.ts — the whole integration surface with dropship-engine
+                  app/api/webhooks/dropship-engine/ — receives its product/order events
+apps/worker       Background job scaffold (BullMQ) — currently unused
 supabase/         schema.sql (tables, enums, RLS) + storage.sql (buckets) + seed.sql (demo catalogue)
-                  migrations/ — additive, already-applied changes (see 0002 for the AliExpress engine)
+                  migrations/ — additive, already-applied changes (see 0002 for the dropship columns)
 packages/db       @supabase/supabase-js client wrapper (browser + service-role)
 packages/core     Provider interfaces (PaymentProvider, ShippingProvider, EmailProvider, AIProvider),
                   shared by storefront + admin
-                  aliexpress/    AliExpress Open Platform client (HMAC-SHA256 signing, token refresh)
-                  transformer/   35%-margin pricing + boho surf copy rewriter
-                  fulfillment/   catalog sync, order placement, tracking-poll orchestration
 tools/            Standalone tools that need real internet access or Python
   wc-import-convert   Python original of the WooCommerce .xlsx converter now built into /admin/products/import — kept for local one-off conversions
+dropship-engine/  Store-agnostic AliExpress dropshipping engine — own package.json, own Supabase
+                  project, zero imports from this app. See its own README for the full API contract.
 ```
 
 ## What's implemented
@@ -41,15 +43,14 @@ tools/            Standalone tools that need real internet access or Python
 - **Hero slideshow** (`components/HeroSlideshow.tsx`): the homepage hero crossfades between images, in a randomized order picked client-side on each page load (so the server-rendered first paint stays deterministic), on a slow fade (2s crossfade, 6s hold per slide). Falls back to placeholder imagery until real lookbook photography is dropped into `public/hero/` (see the README there).
 - **Live Supabase data everywhere** (`apps/web/lib/data/*.ts`): every storefront and admin page reads real Supabase queries — `apps/web/lib/sample-data.ts` is gone. `lib/data/products.ts` builds `ProductSummary`/`ProductDetail` from `products` + `product_variants` (cheapest active variant sets price/compare-at) + `inventory_items` (stock, drives "ready to ship") + `product_media` + `product_specs` + `reviews` (aggregated rating/count) + `compatibility_links` (compatible accessories) + shared-category membership (related products, since the schema has no dedicated "related" relation type); `isNew`/`isBestSeller`/`onSale` come from category membership (assign products to the `new-arrivals`/`best-sellers`/`sale` category handles via the importer's `category_handles` column, same as any other category) plus `onSale` also triggers off a variant's `compare_at`. `lib/data/cms.ts`/`guides.ts` read `banners`/`blog_posts` (two small additive columns — `blog_posts.category`/`excerpt` and `banners.secondary_cta_label`/`secondary_cta_href` — were added for these; see `supabase/migrations/0001_guides_and_hero_secondary_cta.sql` for an already-applied database). Everything queries through the service-role client scoped to `tenant_id` and (for storefront reads) `status = 'PUBLISHED'`, since there's no live Supabase Auth session yet to carry RLS. A few product-detail fields have no schema home (FAQs, "what's included") and stay as generic static copy rather than fabricated per-product claims — `care`/`delivery`/`warranty` summaries prefer real `products` columns when set and fall back to the same generic copy otherwise. Pages that now query the database are marked `export const dynamic = "force-dynamic"` so Next doesn't try to prerender them at build time without live credentials.
 - **Demo data cleanup**: `supabase/scripts/delete_demo_tenant.sql` empties out the seeded demo catalogue (products, categories, banners, guides — cascades handle the rest) while keeping the tenant row/slug intact, so `DEFAULT_TENANT_SLUG` doesn't need to change. Run it once your real catalogue is imported.
-- **Beach Footprints AliExpress dropshipping engine** (`packages/core/src/{aliexpress,transformer,fulfillment}`, `supabase/migrations/0002_aliexpress_dropshipping_engine.sql`): an API-driven catalog + fulfillment pipeline layered onto the same tenant/product/order schema, unit-tested with 32 passing tests (`pnpm test`) against recorded API-shaped fixtures — no live AliExpress credentials were available to verify against the real gateway, so the request/response shapes follow the Open Platform's documented method names and field conventions and should be spot-checked against a real account before going live.
-  - **`aliexpress/client.ts`** — `AliExpressClient`: TOP-style request signing (all params sorted by key, HMAC-SHA256 with the app secret, uppercase hex), a refresh-and-retry-once path for expired-token errors, and typed methods for `aliexpress.ds.product.get`, `aliexpress.ds.freight.query`, `aliexpress.ds.order.create`, `aliexpress.ds.trade.order.get`, and `aliexpress.logistics.ds.tracking.info.query`, each with a normalizer that digs the payload out of the gateway's nested `result` shape defensively (missing/renamed fields degrade instead of throwing mid-sync).
-  - **`transformer/pricing.ts`** — `calculateRetailPrice(supplierCostCents, marginRate = 0.35)`: cost × 1.35, rounded up to the nearest `.95` (never down, and a landed whole-dollar amount is left alone) — the spec's own example, $16.00 → $21.60 → $21.95, is a unit test. `diffPriceChange` compares a freshly-fetched supplier cost against what's stored so the daily sync can log real changes only.
-  - **`transformer/copy.ts`** — strips dropshipping-listing buzzwords ("2026 Hot Sale", "Dropship", "Sexy", "Free Shipping", marketplace suffixes after a `|`), renames into a coastal/boho style ("Floral Kimono Coverup" → "Sun-Drenched Boho Coastal Kimono"), and builds the four-section description (The Vibe / Fit & Features / Fabric & Care / Shipping & Delivery). `rewriteProductCopy` takes an optional `CopyProvider` (an LLM hook, same shape as `packages/core`'s existing `AIProvider`) and falls back to this offline template on any provider error, so ingestion never blocks on an external API being down — no LLM adapter ships by default, wire one up by implementing `CopyProvider`.
-  - **`fulfillment/service.ts`** — `importProductFromAliExpress`/`upsertProductFromDetail` (new products land `DRAFT` for review; a re-import of a known supplier product id updates in place rather than duplicating), `runDailyCatalogSync` (reconciles stock + price per tenant, logs every real price change to `product_price_log`, flips a product to `OUT_OF_STOCK`/back to `PUBLISHED` as its variants sell out/restock, and treats a supplier-side fetch failure — e.g. a delisted product — as unavailable rather than leaving stale stock counts), `placeAliExpressOrder` (idempotent via an atomic `UPDATE … WHERE fulfillment_status = 'unfulfilled' RETURNING`-style claim, so a retried or duplicated webhook can never place the same order twice), and `pollTrackingUpdates` (detects the shipped/delivered transition and fires a notify callback once). Every one of these writes an entry to `fulfillment_logs`, readable via `GET /api/admin/fulfillment/logs`.
-  - **Scheduling**: `apps/worker/src/queue.ts` registers the catalog sync as a BullMQ repeatable job at `0 2 * * *` (02:00 UTC daily) and tracking polling at `0 */5 * * *` (every 5 hours, inside the spec's 4-6 hour window) — needs `REDIS_URL`; `apps/worker/src/index.ts` logs and no-ops instead of crashing when it's unset, so the CLI scripts below still work with zero infra.
-  - **CLI** (`pnpm run <script> --`, forwarding into `apps/worker`): `import:aliexpress -- --id=<productId>`, `sync:aliexpress`, `fulfill:aliexpress -- --order-id=<localOrderId>`, `sync:tracking`.
-  - **Admin API**: `POST /api/admin/products/aliexpress/import`, `POST /api/admin/orders/:id/place-aliexpress`, `POST /api/admin/sync/tracking`, `GET /api/admin/fulfillment/logs` — all under the same `/api/admin/*` HTTP Basic Auth gate as the rest of admin.
-  - Orders have no live checkout → `orders` write path yet (see below), so `placeAliExpressOrder` reads `orders.shipping_address`, a new denormalized jsonb snapshot column — once checkout is wired, populate it from the order's chosen address at write time rather than joining `addresses` live, so a later address edit/delete can't retroactively change what was already shipped to.
+- **AliExpress dropshipping, via `dropship-engine`** (`/dropship-engine`, `apps/web/lib/dropshipEngine.ts`, `supabase/migrations/0002_aliexpress_dropshipping_engine.sql`): Beach Footprints holds no AliExpress logic of its own — everything (signing, pricing, copy rewriting, order placement, sync) lives in the engine, a separate project this app is just a client of. See `/dropship-engine/README.md` for the engine's own architecture, API contract, and its 48 passing tests; this section covers only the Beach Footprints side of the integration.
+  - **`apps/web/lib/dropshipEngine.ts`** — the entire integration surface: typed wrappers over the engine's REST API (`importProduct`, `createMapping`, `fulfillOrder`, `getOrderStatus`, `triggerCatalogSync`/`triggerTrackingSync`, the AliExpress OAuth proxy calls, `registerWebhook`), authenticated with `DROPSHIP_ENGINE_API_KEY`. Nothing else in this app talks to the engine directly.
+  - **`POST /api/admin/products/aliexpress/import`** — calls the engine's product import (which applies this store's pricing rule + brand voice server-side), then writes the result into Beach Footprints' own `products`/`product_variants`/`inventory_items`/`product_media` (new products land `DRAFT`; a re-import of a known supplier product id updates in place), and registers each variant's mapping back with the engine (`external_variant_id` = this store's own `product_variants.id` — the engine never sees or stores anything about this store's schema beyond that one opaque id).
+  - **`POST /api/admin/orders/:id/place-aliexpress`** — reads the order's `shipping_address`/line items and calls the engine's `POST /v1/orders/fulfill`; idempotency is the engine's responsibility (an atomic claim on its own `orders` table, keyed by this store's order id), not reimplemented here. Mirrors the result into Beach Footprints' own `orders` row.
+  - **`POST /api/webhooks/dropship-engine`** — receives the engine's signed webhooks (`product.price_changed`/`out_of_stock`/`restocked`, `order.shipped`/`delivered`/`fulfillment_failed`) and applies them to local `products`/`product_variants`/`inventory_items`/`orders`; verifies `X-Dropship-Signature` (`HMAC-SHA256(DROPSHIP_ENGINE_WEBHOOK_SECRET, rawBody)`) before trusting anything, and sends the shipping-confirmation email on `order.shipped`. This is how catalog/tracking sync results reach this store — the engine's own scheduled worker (daily catalog sync, tracking every 5h) calls it, and so does `POST /api/admin/sync/tracking` (an on-demand trigger, for an admin "sync now" button).
+  - **`GET /api/admin/aliexpress/auth`** (`GET` for the authorize link, `PUT` to register the AliExpress app key/secret, `POST` to exchange the OAuth code) and the **`/admin/aliexpress`** page — proxy the one-time AliExpress OAuth setup through the engine. Nothing here ever displays an AliExpress access/refresh token; the engine stores and refreshes them itself.
+  - Every one of the above writes an entry to `fulfillment_logs` (this store's own local audit trail, distinct from the engine's own `sync_logs`), readable via `GET /api/admin/fulfillment/logs`.
+  - Orders have no live checkout → `orders` write path yet (see below), so the fulfillment route reads `orders.shipping_address`, a denormalized jsonb snapshot column — once checkout is wired, populate it from the order's chosen address at write time rather than joining `addresses` live, so a later address edit/delete can't retroactively change what was already shipped to.
 
 ## What's stubbed / not wired to a live backend
 
@@ -70,13 +71,9 @@ pnpm dev          # apps/web on :3000
 pnpm schema       # prints how to apply supabase/schema.sql
 pnpm seed         # prints how to apply supabase/seed.sql
 pnpm db:types     # regenerate packages/db/src/database.types.ts (needs SUPABASE_PROJECT_ID)
-pnpm test         # packages/core unit tests (pricing, copy rewriter, AliExpress client, fulfillment service) — vitest, no live credentials needed
 
-# AliExpress dropshipping engine CLI (needs the ALIEXPRESS_* and SUPABASE_* env vars below):
-pnpm import:aliexpress -- --id=<productId>
-pnpm sync:aliexpress
-pnpm fulfill:aliexpress -- --order-id=<localOrderId>
-pnpm sync:tracking
+# dropship-engine is a separate, self-contained project — see /dropship-engine/README.md
+# for setup (own Supabase project, `pnpm create-store`, its own `pnpm test`).
 ```
 
 Required env vars once wiring pages to real data (`.env.local` in `apps/web`, plus server-only vars wherever `createServiceRoleSupabaseClient` runs):
@@ -89,13 +86,12 @@ SUPABASE_SERVICE_ROLE_KEY=   # server-only — never expose to the browser
 DEFAULT_TENANT_SLUG=          # optional, used by the CSV importer until admin auth resolves a tenant from a session
 ADMIN_PASSWORD=                # protects /admin and /api/admin/* with HTTP Basic Auth — see middleware.ts
 
-# AliExpress Open Platform / Dropshipping API (see packages/core/src/aliexpress)
-ALIEXPRESS_APP_KEY=
-ALIEXPRESS_APP_SECRET=
-ALIEXPRESS_ACCESS_TOKEN=
-ALIEXPRESS_REFRESH_TOKEN=
-
-REDIS_URL=                     # apps/worker only — required to run the scheduled catalog-sync/tracking-sync BullMQ jobs; the CLI scripts don't need it
+# dropship-engine connection (see apps/web/lib/dropshipEngine.ts and /dropship-engine's README)
+DROPSHIP_ENGINE_URL=            # e.g. https://dropship-engine.example.com
+DROPSHIP_ENGINE_API_KEY=        # from `pnpm create-store` in /dropship-engine — this store's API key
+DROPSHIP_ENGINE_WEBHOOK_SECRET= # generated by this app, registered with the engine via POST /v1/webhooks
+                                 # ({url: "<this deployment>/api/webhooks/dropship-engine", secret}) — see
+                                 # POST /api/webhooks/dropship-engine's signature verification
 ```
 
 Also apply `supabase/storage.sql` (creates the private `imports` bucket used by the CSV importer) alongside `schema.sql`.
