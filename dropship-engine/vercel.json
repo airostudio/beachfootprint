@@ -1,4 +1,6 @@
 {
+  "buildCommand": "echo 'No static build needed — api/index.ts is transpiled per-function by Vercel.'",
+  "outputDirectory": "public",
   "rewrites": [{ "source": "/(.*)", "destination": "/api/index" }],
   "crons": [
     { "path": "/internal/cron/catalog-sync", "schedule": "0 2 * * *" },
