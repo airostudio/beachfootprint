@@ -1,3 +1,12 @@
 packages:
   - "apps/*"
   - "packages/*"
+  # dropship-engine is otherwise a fully independent project (own lockfile,
+  # `pnpm install --ignore-workspace` for local dev — see its README) not
+  # meant to be coupled to this workspace. It's declared here only because
+  # Vercel's monorepo detection walks up to this file regardless and
+  # installs from here when it finds one, so without this entry its own
+  # dependencies (fastify, @supabase/supabase-js, zod, tsc, ...) never get
+  # installed when deployed from this repo. Drop this line once it moves to
+  # its own repo (webesedrop) and this workaround is no longer needed.
+  - "dropship-engine"
