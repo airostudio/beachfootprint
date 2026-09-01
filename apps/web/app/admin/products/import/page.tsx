@@ -3,7 +3,7 @@
 import { useRef, useState } from "react";
 import Link from "next/link";
 
-type Mode = "csv" | "woocommerce";
+type Mode = "csv" | "woocommerce" | "aliexpress";
 type Phase = "idle" | "uploading" | "processing" | "done" | "error";
 
 interface ImportRowError {
@@ -31,7 +31,18 @@ const MODE_CONFIG: Record<Mode, { label: string; accept: string; createEndpoint:
     createEndpoint: "/api/admin/imports/woocommerce",
     contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
   },
+  // Not file-based — the AliExpress mode has its own dedicated UI/handler below and never calls runImport().
+  aliexpress: { label: "AliExpress", accept: "", createEndpoint: "", contentType: "" },
 };
+
+/** Pulls the numeric product id out of an AliExpress product URL, or passes through a bare id. */
+function extractAliExpressProductId(input: string): string | null {
+  const trimmed = input.trim();
+  const urlMatch = trimmed.match(/aliexpress\.[a-z.]+\/item\/(?:.*\/)?(\d+)\.html/i) ?? trimmed.match(/[?&]productId=(\d+)/i);
+  if (urlMatch) return urlMatch[1];
+  if (/^\d+$/.test(trimmed)) return trimmed;
+  return null;
+}
 
 export default function ProductImportPage() {
   const fileInput = useRef<HTMLInputElement>(null);
@@ -45,6 +56,35 @@ export default function ProductImportPage() {
   const [errors, setErrors] = useState<ImportRowError[]>([]);
   const [message, setMessage] = useState<string | null>(null);
   const [summary, setSummary] = useState<ConversionSummary | null>(null);
+
+  const [aliexpressInput, setAliexpressInput] = useState("");
+  const [aliexpressResult, setAliexpressResult] = useState<{ handle: string; isNewProduct: boolean } | null>(null);
+
+  async function runAliExpressImport() {
+    const productId = extractAliExpressProductId(aliexpressInput);
+    if (!productId) {
+      setPhase("error");
+      setMessage("Paste a valid AliExpress product URL (e.g. aliexpress.com/item/1005006308361133.html) or a bare product id.");
+      return;
+    }
+    setPhase("processing");
+    setMessage(null);
+    setAliexpressResult(null);
+    try {
+      const res = await fetch("/api/admin/products/aliexpress/import", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ productId }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Import failed");
+      setAliexpressResult({ handle: data.handle, isNewProduct: data.isNewProduct });
+      setPhase("done");
+    } catch (err) {
+      setPhase("error");
+      setMessage(err instanceof Error ? err.message : "Import failed");
+    }
+  }
 
   async function runImport(file: File) {
     const config = MODE_CONFIG[mode];
@@ -150,7 +190,7 @@ export default function ProductImportPage() {
         ))}
       </div>
 
-      {mode === "csv" ? (
+      {mode === "csv" && (
         <div className="border border-stone-200 p-6 mb-8">
           <p className="text-xs font-medium mb-2">Expected columns</p>
           <p className="text-xs text-stone-500 leading-relaxed">
@@ -159,7 +199,8 @@ export default function ProductImportPage() {
             image_urls (pipe- or comma-separated, already-hosted image URLs — first is used as the primary image)
           </p>
         </div>
-      ) : (
+      )}
+      {mode === "woocommerce" && (
         <div className="border border-stone-200 p-6 mb-8">
           <p className="text-xs font-medium mb-2">What this does</p>
           <p className="text-xs text-stone-500 leading-relaxed">
@@ -171,39 +212,75 @@ export default function ProductImportPage() {
           </p>
         </div>
       )}
+      {mode === "aliexpress" && (
+        <div className="border border-stone-200 p-6 mb-8">
+          <p className="text-xs font-medium mb-2">What this does</p>
+          <p className="text-xs text-stone-500 leading-relaxed mb-4">
+            Paste a link to any AliExpress product page (or its bare product id). The dropshipping engine fetches
+            the live listing, applies your pricing rule and brand voice, and this creates or updates the matching
+            product here — priced, described, and mapped so catalog sync keeps it in stock automatically. Requires
+            AliExpress to be connected first (see the AliExpress settings page).
+          </p>
+          <input
+            type="text"
+            value={aliexpressInput}
+            onChange={(e) => setAliexpressInput(e.target.value)}
+            placeholder="https://www.aliexpress.com/item/1005006308361133.html"
+            className="w-full border border-stone-300 px-3 py-2 text-sm mb-4"
+            disabled={phase === "processing"}
+          />
+          <button className="btn-primary" disabled={phase === "processing" || !aliexpressInput} onClick={runAliExpressImport}>
+            {phase === "processing" ? "Importing…" : "Import from AliExpress"}
+          </button>
+          {aliexpressResult && (
+            <p className="text-sm mt-4">
+              {aliexpressResult.isNewProduct ? "Created" : "Updated"} <span className="font-medium">{aliexpressResult.handle}</span> — see it in{" "}
+              <Link href="/admin/products" className="underline">
+                Products
+              </Link>
+              .
+            </p>
+          )}
+          {phase === "error" && <p className="text-sm text-red-600 mt-4">{message}</p>}
+        </div>
+      )}
 
-      <label className="flex items-start gap-2 mb-6 text-xs text-stone-600 cursor-pointer">
-        <input
-          type="checkbox"
-          className="mt-0.5"
-          checked={markMissingOutOfStock}
-          disabled={busy}
-          onChange={(e) => setMarkMissingOutOfStock(e.target.checked)}
-        />
-        <span>
-          Mark products not in this file as <span className="font-medium">Out Of Stock</span>. Existing products are
-          always left alone by default — this only affects products sharing a brand with the imported file whose
-          handle doesn&apos;t appear in it (their stock is set to 0; they are not deleted or unpublished).
-        </span>
-      </label>
+      {mode !== "aliexpress" && (
+        <>
+          <label className="flex items-start gap-2 mb-6 text-xs text-stone-600 cursor-pointer">
+            <input
+              type="checkbox"
+              className="mt-0.5"
+              checked={markMissingOutOfStock}
+              disabled={busy}
+              onChange={(e) => setMarkMissingOutOfStock(e.target.checked)}
+            />
+            <span>
+              Mark products not in this file as <span className="font-medium">Out Of Stock</span>. Existing products
+              are always left alone by default — this only affects products sharing a brand with the imported file
+              whose handle doesn&apos;t appear in it (their stock is set to 0; they are not deleted or unpublished).
+            </span>
+          </label>
 
-      <input
-        ref={fileInput}
-        type="file"
-        accept={MODE_CONFIG[mode].accept}
-        className="hidden"
-        onChange={(e) => {
-          const file = e.target.files?.[0];
-          if (file) runImport(file);
-        }}
-      />
+          <input
+            ref={fileInput}
+            type="file"
+            accept={MODE_CONFIG[mode].accept}
+            className="hidden"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) runImport(file);
+            }}
+          />
 
-      <button className="btn-primary" disabled={busy} onClick={() => fileInput.current?.click()}>
-        {phase === "idle" && `Choose ${mode === "csv" ? "CSV" : ".xlsx"} File`}
-        {phase === "uploading" && "Uploading…"}
-        {phase === "processing" && "Processing…"}
-        {(phase === "done" || phase === "error") && "Import Another File"}
-      </button>
+          <button className="btn-primary" disabled={busy} onClick={() => fileInput.current?.click()}>
+            {phase === "idle" && `Choose ${mode === "csv" ? "CSV" : ".xlsx"} File`}
+            {phase === "uploading" && "Uploading…"}
+            {phase === "processing" && "Processing…"}
+            {(phase === "done" || phase === "error") && "Import Another File"}
+          </button>
+        </>
+      )}
 
       {summary && (
         <div className="mt-6 border border-stone-200 p-4 text-xs text-stone-600">
@@ -219,7 +296,7 @@ export default function ProductImportPage() {
         </div>
       )}
 
-      {phase !== "idle" && (
+      {mode !== "aliexpress" && phase !== "idle" && (
         <div className="mt-8">
           <div className="h-2 bg-stone-200 w-full">
             <div className="h-2 bg-ink-950 transition-all" style={{ width: `${progress}%` }} />
@@ -233,8 +310,8 @@ export default function ProductImportPage() {
         </div>
       )}
 
-      {phase === "done" && <p className="text-sm mt-4">Import complete.</p>}
-      {phase === "error" && <p className="text-sm text-red-600 mt-4">{message}</p>}
+      {mode !== "aliexpress" && phase === "done" && <p className="text-sm mt-4">Import complete.</p>}
+      {mode !== "aliexpress" && phase === "error" && <p className="text-sm text-red-600 mt-4">{message}</p>}
 
       {errors.length > 0 && (
         <div className="mt-6 border border-stone-200 max-h-64 overflow-y-auto">
