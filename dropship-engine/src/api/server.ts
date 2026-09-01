@@ -6,6 +6,7 @@ import { registerProductRoutes } from "./routes/products";
 import { registerOrderRoutes } from "./routes/orders";
 import { registerConfigRoutes } from "./routes/config";
 import { registerSyncRoutes } from "./routes/sync";
+import { registerCronRoutes } from "./routes/cron";
 
 declare module "fastify" {
   interface FastifyRequest {
@@ -18,7 +19,8 @@ export function buildServer(db: SupabaseClient): FastifyInstance {
 
   app.get("/v1/health", async () => ({ status: "ok" }));
 
-  // Every /v1/* route except /v1/health requires a store API key.
+  // Every /v1/* route except /v1/health requires a store API key. /internal/*
+  // (cron-triggered, all-stores jobs) authenticates itself with CRON_SECRET instead.
   app.addHook("onRequest", async (request, reply) => {
     if (request.url === "/v1/health" || !request.url.startsWith("/v1/")) return;
     const store = await authenticateStore(db, request.headers.authorization);
@@ -34,6 +36,7 @@ export function buildServer(db: SupabaseClient): FastifyInstance {
   registerOrderRoutes(app, db);
   registerConfigRoutes(app, db);
   registerSyncRoutes(app, db);
+  registerCronRoutes(app, db);
 
   return app;
 }
