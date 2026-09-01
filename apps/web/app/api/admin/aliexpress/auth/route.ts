@@ -1,17 +1,22 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { connectAliExpressApp, exchangeAuthorizationCode, getAuthorizeUrl } from "@/lib/dropshipEngine";
+import { connectAliExpressApp, exchangeAuthorizationCode, getAliExpressStatus, getAuthorizeUrl } from "@/lib/dropshipEngine";
 
 export const runtime = "nodejs";
 
 /**
  * Proxies the one-time AliExpress OAuth bootstrap to the dropship-engine
- * (see /dropship-engine's README) — Beach Footprints' own admin password
- * gates this route, and DROPSHIP_ENGINE_API_KEY (never the AliExpress app
- * credentials themselves) is the only secret this app holds for it.
+ * (see the engine's README) — Beach Footprints' own admin password gates
+ * this route, and DROPSHIP_ENGINE_API_KEY (never any AliExpress credentials)
+ * is the only secret this app holds for it. The engine has its own platform
+ * AliExpress app, so normally nothing needs registering here — GET without
+ * a redirectUri returns current connection status; with one, it builds the
+ * authorize link to send the store owner to log into their own account.
  *
  * PUT  /api/admin/aliexpress/auth { appKey, appSecret }
- *   -> registers this store's AliExpress Open Platform app with the engine.
+ *   -> advanced/optional: use this store's own AliExpress app instead of the platform's.
+ * GET  /api/admin/aliexpress/auth
+ *   -> { connected, connectedAt }
  * GET  /api/admin/aliexpress/auth?redirectUri=<callback>
  *   -> { authorizeUrl } — visit it, log in, approve.
  * POST /api/admin/aliexpress/auth { code, redirectUri }
@@ -32,12 +37,12 @@ export async function PUT(request: Request) {
 
 export async function GET(request: Request) {
   const redirectUri = new URL(request.url).searchParams.get("redirectUri");
-  if (!redirectUri) return NextResponse.json({ error: "Missing redirectUri query param" }, { status: 400 });
 
   try {
+    if (!redirectUri) return NextResponse.json(await getAliExpressStatus());
     return NextResponse.json(await getAuthorizeUrl(redirectUri));
   } catch (error) {
-    return NextResponse.json({ error: error instanceof Error ? error.message : "Could not build authorize URL" }, { status: 502 });
+    return NextResponse.json({ error: error instanceof Error ? error.message : "AliExpress request failed" }, { status: 502 });
   }
 }
 

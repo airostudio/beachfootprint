@@ -117,8 +117,13 @@ export function triggerTrackingSync(): Promise<{ polled: number; shipped: number
   return engineFetch("/v1/sync/tracking", { method: "POST" });
 }
 
+/** Advanced/optional — only needed if this store wants its own AliExpress Open Platform app instead of the engine's shared one. */
 export function connectAliExpressApp(params: { appKey: string; appSecret: string }): Promise<{ connected: boolean; message?: string }> {
   return engineFetch("/v1/aliexpress/connection", { method: "POST", body: JSON.stringify(params) });
+}
+
+export function getAliExpressStatus(): Promise<{ connected: boolean; connectedAt: string | null }> {
+  return engineFetch("/v1/aliexpress/status");
 }
 
 export function getAuthorizeUrl(redirectUri: string): Promise<{ authorizeUrl: string }> {
