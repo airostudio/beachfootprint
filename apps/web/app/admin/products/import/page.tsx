@@ -58,7 +58,7 @@ export default function ProductImportPage() {
   const [summary, setSummary] = useState<ConversionSummary | null>(null);
 
   const [aliexpressInput, setAliexpressInput] = useState("");
-  const [aliexpressResult, setAliexpressResult] = useState<{ handle: string; isNewProduct: boolean } | null>(null);
+  const [aliexpressResult, setAliexpressResult] = useState<{ handle: string; isNewProduct: boolean; categoryHandle: string | null } | null>(null);
   const [aliexpressSearch, setAliexpressSearch] = useState("");
 
   function openAliExpressSearch() {
@@ -86,7 +86,7 @@ export default function ProductImportPage() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Import failed");
-      setAliexpressResult({ handle: data.handle, isNewProduct: data.isNewProduct });
+      setAliexpressResult({ handle: data.handle, isNewProduct: data.isNewProduct, categoryHandle: data.categoryHandle ?? null });
       setPhase("done");
     } catch (err) {
       setPhase("error");
@@ -262,7 +262,14 @@ export default function ProductImportPage() {
           </button>
           {aliexpressResult && (
             <p className="text-sm mt-4">
-              {aliexpressResult.isNewProduct ? "Created" : "Updated"} <span className="font-medium">{aliexpressResult.handle}</span> — see it in{" "}
+              {aliexpressResult.isNewProduct ? "Created" : "Updated"} <span className="font-medium">{aliexpressResult.handle}</span>
+              {aliexpressResult.categoryHandle && (
+                <>
+                  {" "}
+                  — auto-assigned to <span className="font-medium">{aliexpressResult.categoryHandle}</span>
+                </>
+              )}
+              {" "}— see it in{" "}
               <Link href="/admin/products" className="underline">
                 Products
               </Link>
