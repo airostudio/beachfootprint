@@ -41,7 +41,7 @@ function AliExpressCallbackInner() {
         const data = await res.json();
         if (!res.ok) throw new Error(data.error ?? "Token exchange failed");
         setStatus("done");
-        setTimeout(() => router.replace("/admin/aliexpress"), 1500);
+        setTimeout(() => router.replace("/admin/aliexpress/settings"), 1500);
       })
       .catch((err) => {
         setStatus("error");
@@ -56,7 +56,7 @@ function AliExpressCallbackInner() {
       <h1 className="font-serif text-3xl mb-6">Connecting…</h1>
       <div className="card p-6">
         {status === "exchanging" && <p className="text-sm text-stone-600">Finishing up with AliExpress…</p>}
-        {status === "done" && <p className="text-sm font-medium">Connected. Redirecting…</p>}
+        {status === "done" && <p className="text-sm font-medium">Connected. Taking you to your dropship settings…</p>}
         {status === "error" && (
           <>
             <p className="text-sm text-red-600 mb-3">{error}</p>

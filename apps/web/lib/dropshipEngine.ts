@@ -54,6 +54,32 @@ export interface OrderStatusResult {
   carrier: string | null;
 }
 
+export type RoundingMode = "none" | "up-95" | "up-99" | "up-00";
+export type PricingRule =
+  | { type: "percent_margin"; marginRate: number; rounding: RoundingMode }
+  | { type: "fixed_markup"; markupCents: number; rounding: RoundingMode }
+  | { type: "tiered_margin"; tiers: Array<{ maxCostCents?: number; marginRate: number }>; rounding: RoundingMode };
+
+export interface StoreSettings {
+  pricing: {
+    minPriceCents?: number;
+    maxPriceCents?: number;
+    ignorePriceChangeBelowPercent?: number;
+    compareAtRule?: PricingRule;
+  };
+  import: { defaultStatus: "draft" | "published" };
+  stock: { outOfStockBehavior: "mark_unavailable" | "keep_visible"; ignoreStockChangeBelowUnits?: number };
+  shipping: { preferredLogisticsService?: string };
+  notifications: {
+    priceChanged: boolean;
+    outOfStock: boolean;
+    restocked: boolean;
+    orderShipped: boolean;
+    orderDelivered: boolean;
+    fulfillmentFailed: boolean;
+  };
+}
+
 class DropshipEngineError extends Error {
   constructor(
     message: string,
@@ -136,4 +162,12 @@ export function exchangeAuthorizationCode(params: { code: string; redirectUri: s
 
 export function registerWebhook(params: { url: string; secret: string }): Promise<{ registered: boolean }> {
   return engineFetch("/v1/webhooks", { method: "POST", body: JSON.stringify(params) });
+}
+
+export function getSettings(): Promise<{ settings: StoreSettings }> {
+  return engineFetch("/v1/settings");
+}
+
+export function updateSettings(patch: Partial<StoreSettings>): Promise<{ settings: StoreSettings }> {
+  return engineFetch("/v1/settings", { method: "PUT", body: JSON.stringify(patch) });
 }

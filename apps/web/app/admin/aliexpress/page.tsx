@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 
 /**
  * AliExpress connection, proxied through the dropship-engine (see the engine's
@@ -100,9 +101,14 @@ export default function AliExpressAuthPage() {
           <>
             <p className="text-sm font-medium mb-1">Connected</p>
             {connectedAt && <p className="text-xs text-stone-500 mb-4">Since {new Date(connectedAt).toLocaleString()}</p>}
-            <button className="btn-secondary" onClick={connect} disabled={busy !== null}>
-              {busy === "connect" ? "Redirecting…" : "Reconnect / switch account"}
-            </button>
+            <div className="flex gap-3 items-center">
+              <button className="btn-secondary" onClick={connect} disabled={busy !== null}>
+                {busy === "connect" ? "Redirecting…" : "Reconnect / switch account"}
+              </button>
+              <Link href="/admin/aliexpress/settings" className="text-sm underline">
+                Pricing, stock &amp; notification settings
+              </Link>
+            </div>
           </>
         )}
         {connected === false && (
