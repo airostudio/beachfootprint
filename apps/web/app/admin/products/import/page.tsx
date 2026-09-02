@@ -59,6 +59,14 @@ export default function ProductImportPage() {
 
   const [aliexpressInput, setAliexpressInput] = useState("");
   const [aliexpressResult, setAliexpressResult] = useState<{ handle: string; isNewProduct: boolean } | null>(null);
+  const [aliexpressSearch, setAliexpressSearch] = useState("");
+
+  function openAliExpressSearch() {
+    const url = aliexpressSearch.trim()
+      ? `https://www.aliexpress.com/wholesale?SearchText=${encodeURIComponent(aliexpressSearch.trim())}`
+      : "https://www.aliexpress.com/";
+    window.open(url, "_blank", "noopener,noreferrer");
+  }
 
   async function runAliExpressImport() {
     const productId = extractAliExpressProductId(aliexpressInput);
@@ -214,12 +222,32 @@ export default function ProductImportPage() {
       )}
       {mode === "aliexpress" && (
         <div className="border border-stone-200 p-6 mb-8">
-          <p className="text-xs font-medium mb-2">What this does</p>
+          <p className="text-xs font-medium mb-2">Step 1 — Find a product</p>
           <p className="text-xs text-stone-500 leading-relaxed mb-4">
-            Paste a link to any AliExpress product page (or its bare product id). The dropshipping engine fetches
-            the live listing, applies your pricing rule and brand voice, and this creates or updates the matching
-            product here — priced, described, and mapped so catalog sync keeps it in stock automatically. Requires
-            AliExpress to be connected first (see the AliExpress settings page).
+            AliExpress doesn&rsquo;t allow its pages to open inside another site, so search opens in a new tab.
+            Browse or search normally there, then come back here and paste the product&rsquo;s link below.
+          </p>
+          <div className="flex gap-2 mb-4">
+            <input
+              type="text"
+              value={aliexpressSearch}
+              onChange={(e) => setAliexpressSearch(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") openAliExpressSearch();
+              }}
+              placeholder="e.g. woven beach bag"
+              className="flex-1 border border-stone-300 px-3 py-2 text-sm"
+            />
+            <button className="btn-secondary whitespace-nowrap" onClick={openAliExpressSearch}>
+              Search AliExpress ↗
+            </button>
+          </div>
+
+          <p className="text-xs font-medium mb-2 mt-6">Step 2 — Import it</p>
+          <p className="text-xs text-stone-500 leading-relaxed mb-4">
+            Paste the product page link (or its bare product id). The dropshipping engine fetches the live listing,
+            applies your pricing rule and brand voice, and this creates or updates the matching product here —
+            priced, described, and mapped so catalog sync keeps it in stock automatically.
           </p>
           <input
             type="text"
