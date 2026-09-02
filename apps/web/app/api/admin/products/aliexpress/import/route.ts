@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { createServiceRoleSupabaseClient } from "@trend/db";
 import { resolveTenantId } from "@/lib/import/tenant";
+import { categorizeProduct } from "@/lib/import/categorize";
 import { createMapping, importProduct } from "@/lib/dropshipEngine";
 
 export const runtime = "nodejs";
@@ -121,14 +122,25 @@ export async function POST(request: Request) {
       await supabase.from("product_media").insert(imported.imageUrls.map((url, position) => ({ product_id: productId, url, position })));
     }
 
+    // Auto-assign to an existing category, best-effort — never invents a new one, and never
+    // overrides a category an admin may have already set by hand on a re-import.
+    let categoryHandle: string | null = null;
+    if (isNewProduct) {
+      const match = await categorizeProduct(supabase, tenantId, { title: imported.onBrandName, description: imported.description });
+      if (match) {
+        await supabase.from("product_categories").upsert({ product_id: productId, category_id: match.categoryId }, { onConflict: "product_id,category_id" });
+        categoryHandle = match.categoryHandle;
+      }
+    }
+
     await supabase.from("fulfillment_logs").insert({
       tenant_id: tenantId,
       variant_id: variantIds[0] ?? null,
       event: "product_imported",
-      detail: { aliexpressProductId: imported.aliexpressProductId, handle, isNewProduct },
+      detail: { aliexpressProductId: imported.aliexpressProductId, handle, isNewProduct, categoryHandle },
     });
 
-    return NextResponse.json({ productId, handle, isNewProduct, variantIds });
+    return NextResponse.json({ productId, handle, isNewProduct, variantIds, categoryHandle });
   } catch (error) {
     const message = error instanceof Error ? error.message : "AliExpress import failed";
     return NextResponse.json({ error: message }, { status: 502 });
