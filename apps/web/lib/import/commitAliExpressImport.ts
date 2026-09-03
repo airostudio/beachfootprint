@@ -47,6 +47,7 @@ export async function commitAliExpressImport(
   let isNewProduct = false;
 
   const productFields = {
+    packaged_weight_grams: staged.packageWeightGrams,
     title: staged.title,
     short_description: staged.shortDescription || null,
     description: staged.description,
@@ -89,6 +90,15 @@ export async function commitAliExpressImport(
           product_id: productId,
           title: sku.properties,
           sku: `AE-${sku.aliexpressSkuId}`,
+          // Real option columns, so the storefront can render a proper variant picker
+          // instead of one opaque "Blue / M" string.
+          option1_name: sku.options?.[0]?.name ?? null,
+          option1_value: sku.options?.[0]?.value ?? null,
+          option2_name: sku.options?.[1]?.name ?? null,
+          option2_value: sku.options?.[1]?.value ?? null,
+          option3_name: sku.options?.[2]?.name ?? null,
+          option3_value: sku.options?.[2]?.value ?? null,
+          weight_grams: staged.packageWeightGrams,
           price: sku.retailPriceCents,
           compare_at: sku.compareAtCents,
           currency: staged.currencyCode,
@@ -120,11 +130,37 @@ export async function commitAliExpressImport(
     });
   }
 
-  if (isNewProduct && staged.imageUrls.length > 0) {
-    await supabase.from("product_media").insert(staged.imageUrls.map((url, position) => ({ product_id: productId, url, position })));
+  // Media is synced on EVERY commit, not just for new products: re-confirming an already-imported
+  // product (the normal way to pick up corrected images) would otherwise take the update path and
+  // never attach them. The staged editor is where images are curated, so it owns the set — replace
+  // rather than append, so re-confirming can't accumulate duplicates.
+  if (staged.imageUrls.length > 0) {
+    await supabase.from("product_media").delete().eq("product_id", productId);
+    const { error: mediaError } = await supabase
+      .from("product_media")
+      .insert(staged.imageUrls.map((url, position) => ({ product_id: productId, url, position, alt: staged.title })));
+    // Previously unchecked, so a failed media insert left a product with no images while the
+    // confirm still reported success.
+    if (mediaError) throw new Error(`Product saved but its images could not be attached: ${mediaError.message}`);
   }
 
-  if (isNewProduct && staged.categoryId) {
+  // Specifications, synced like media: replaced on every commit so re-confirming picks up
+  // supplier changes and edits without duplicating rows.
+  if (staged.attributes.length > 0) {
+    await supabase.from("product_specs").delete().eq("product_id", productId);
+    const { error: specsError } = await supabase.from("product_specs").insert(
+      staged.attributes.map((attr, position) => ({
+        product_id: productId,
+        group: "Specifications",
+        label: attr.name,
+        value: attr.value,
+        position,
+      })),
+    );
+    if (specsError) throw new Error(`Product saved but its specifications could not be attached: ${specsError.message}`);
+  }
+
+  if (staged.categoryId) {
     await supabase
       .from("product_categories")
       .upsert({ product_id: productId, category_id: staged.categoryId }, { onConflict: "product_id,category_id" });

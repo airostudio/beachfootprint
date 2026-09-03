@@ -19,6 +19,8 @@ interface ConfirmOutcome {
   handle?: string;
   productId?: string;
   isNewProduct?: boolean;
+  /** DRAFT products are real products but deliberately invisible on the storefront until published. */
+  status?: "DRAFT" | "PUBLISHED";
   error?: string;
 }
 
@@ -56,9 +58,26 @@ export async function POST(request: Request) {
         .eq("id", stagedId)
         .eq("tenant_id", tenantId);
 
-      results.push({ stagedId, ok: true, handle: committed.handle, productId: committed.productId, isNewProduct: committed.isNewProduct });
+      // Logged so a "it said confirmed but I can't find it" report can be traced from the
+      // runtime logs alone — response bodies aren't recorded there.
+      console.log(
+        `[aliexpress/confirm] committed staged=${stagedId} product=${committed.productId} handle=${committed.handle} ` +
+          `new=${committed.isNewProduct} status=${staged.publish ? "PUBLISHED" : "DRAFT"} tenant=${tenantId} ` +
+          `variants=${committed.variantIds.length} images=${staged.imageUrls.length}`,
+      );
+
+      results.push({
+        stagedId,
+        ok: true,
+        handle: committed.handle,
+        productId: committed.productId,
+        isNewProduct: committed.isNewProduct,
+        status: staged.publish ? "PUBLISHED" : "DRAFT",
+      });
     } catch (error) {
-      results.push({ stagedId, ok: false, error: error instanceof Error ? error.message : "Could not add this product to the store" });
+      const message = error instanceof Error ? error.message : "Could not add this product to the store";
+      console.error(`[aliexpress/confirm] FAILED staged=${stagedId} tenant=${tenantId}: ${message}`);
+      results.push({ stagedId, ok: false, error: message });
     }
   }
 

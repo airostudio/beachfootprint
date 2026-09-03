@@ -42,11 +42,12 @@ interface ConfirmOutcome {
   stagedId: string;
   ok: boolean;
   handle?: string;
+  status?: "DRAFT" | "PUBLISHED";
   error?: string;
 }
 
 function formatMoney(cents: number, currency: string): string {
-  return new Intl.NumberFormat("en-AU", { style: "currency", currency: currency || "USD" }).format(cents / 100);
+  return new Intl.NumberFormat("en-US", { style: "currency", currency: currency || "USD" }).format(cents / 100);
 }
 
 function priceRange(skus: StagedSku[], currency: string): string {
@@ -107,7 +108,10 @@ export default function AliExpressStagingPage() {
   }
 
   async function confirmSelected() {
-    const ids = confirmable.filter((s) => selected.has(s.id)).map((s) => s.id);
+    await confirmIds(confirmable.filter((s) => selected.has(s.id)).map((s) => s.id));
+  }
+
+  async function confirmIds(ids: string[]) {
     if (ids.length === 0) return;
     setBusy(true);
     setOutcomes(null);
@@ -183,10 +187,27 @@ export default function AliExpressStagingPage() {
           <ul className="text-xs text-stone-600 space-y-1">
             {outcomes.map((o) => (
               <li key={o.stagedId}>
-                {o.ok ? `✓ ${o.handle}` : <span className="text-red-600">✕ {o.error}</span>}
+                {o.ok ? (
+                  <>
+                    ✓ <span className="font-medium">{o.handle}</span>
+                    {o.status === "DRAFT" ? (
+                      <span className="text-amber-700"> — created as Draft, so it is not on the storefront yet</span>
+                    ) : (
+                      <span className="text-green-700"> — published and live</span>
+                    )}
+                  </>
+                ) : (
+                  <span className="text-red-600">✕ {o.error}</span>
+                )}
               </li>
             ))}
           </ul>
+          {outcomes.some((o) => o.ok && o.status === "DRAFT") && (
+            <p className="text-xs text-stone-500 mt-2">
+              Draft products appear in Products (newest first) but stay off the storefront until published — use
+              &ldquo;Publish All Drafts&rdquo; there, or set the status before confirming.
+            </p>
+          )}
           <Link href="/admin/products" className="text-xs underline mt-3 inline-block">
             View them in Products →
           </Link>
@@ -212,8 +233,11 @@ export default function AliExpressStagingPage() {
               Select all ({confirmable.length})
             </label>
             <button className="btn-primary" disabled={busy || selected.size === 0} onClick={confirmSelected}>
-              {busy ? "Confirming…" : `Confirm ${selected.size || ""} selected`.replace("  ", " ")}
+              {busy ? "Confirming…" : selected.size === 0 ? "Confirm selected" : `Confirm ${selected.size} selected`}
             </button>
+            {selected.size === 0 && !busy && (
+              <span className="text-xs text-stone-400">tick products above, or use Confirm on a card</span>
+            )}
             <span className="text-xs text-stone-500 ml-auto">
               {staged.length} staged{staged.some((s) => s.status === "failed") && " · some failed to fetch"}
             </span>
@@ -286,9 +310,14 @@ export default function AliExpressStagingPage() {
 
                   <div className="flex gap-3 items-center mt-3 pt-3 border-t border-stone-100">
                     {item.status === "ready" && (
-                      <Link href={`/admin/aliexpress/staging/${item.id}`} className="text-xs underline">
-                        Open &amp; edit
-                      </Link>
+                      <>
+                        <button className="btn-primary text-xs py-1 px-3" disabled={busy} onClick={() => confirmIds([item.id])}>
+                          Confirm
+                        </button>
+                        <Link href={`/admin/aliexpress/staging/${item.id}`} className="text-xs underline">
+                          Open &amp; edit
+                        </Link>
+                      </>
                     )}
                     <button className="text-xs underline text-stone-500 ml-auto" disabled={busy} onClick={() => remove(item.id)}>
                       Remove

@@ -55,3 +55,77 @@ export async function getDashboardKpis(): Promise<DashboardKpis> {
     currency,
   };
 }
+
+export interface AdminOrderSummary {
+  id: string;
+  createdAt: string;
+  status: string;
+  fulfillmentStatus: string | null;
+  totalCents: number;
+  currency: string;
+  customerEmail: string | null;
+  itemCount: number;
+  trackingNumber: string | null;
+  aliexpressOrderId: string | null;
+}
+
+/**
+ * Real orders, newest first. Everything a customer buys through Stripe checkout lands here as
+ * PENDING_PAYMENT and becomes PAID only when Stripe's webhook confirms the money moved, so this
+ * list is also how you spot payments that started but never completed.
+ */
+export async function getAdminOrders(limit = 200): Promise<AdminOrderSummary[]> {
+  const tenantId = await getTenantId();
+  const supabase = db();
+
+  const { data, error } = await supabase
+    .from("orders")
+    .select("id, created_at, status, fulfillment_status, total, currency, customer_id, tracking_number, aliexpress_order_id")
+    .eq("tenant_id", tenantId)
+    .order("created_at", { ascending: false })
+    .limit(limit);
+  if (error) throw new Error(`Could not load orders: ${error.message}`);
+
+  interface OrderRow {
+    id: string;
+    created_at: string;
+    status: string;
+    fulfillment_status: string | null;
+    total: number;
+    currency: string;
+    customer_id: string | null;
+    tracking_number: string | null;
+    aliexpress_order_id: string | null;
+  }
+  const rows = (data ?? []) as OrderRow[];
+  if (rows.length === 0) return [];
+
+  const orderIds = rows.map((r) => r.id);
+  const customerIds = [...new Set(rows.map((r) => r.customer_id).filter((id): id is string => Boolean(id)))];
+
+  const [{ data: itemRows }, { data: customerRows }] = await Promise.all([
+    supabase.from("order_items").select("order_id, quantity").in("order_id", orderIds),
+    customerIds.length > 0
+      ? supabase.from("customers").select("id, email").in("id", customerIds)
+      : Promise.resolve({ data: [] as { id: string; email: string }[] }),
+  ]);
+
+  const itemsByOrder = new Map<string, number>();
+  for (const item of ((itemRows ?? []) as { order_id: string; quantity: number }[])) {
+    itemsByOrder.set(item.order_id, (itemsByOrder.get(item.order_id) ?? 0) + item.quantity);
+  }
+  const emailByCustomer = new Map(((customerRows ?? []) as { id: string; email: string }[]).map((c) => [c.id, c.email]));
+
+  return rows.map((r) => ({
+    id: r.id,
+    createdAt: r.created_at,
+    status: r.status,
+    fulfillmentStatus: r.fulfillment_status,
+    totalCents: r.total,
+    currency: r.currency,
+    customerEmail: r.customer_id ? (emailByCustomer.get(r.customer_id) ?? null) : null,
+    itemCount: itemsByOrder.get(r.id) ?? 0,
+    trackingNumber: r.tracking_number,
+    aliexpressOrderId: r.aliexpress_order_id,
+  }));
+}

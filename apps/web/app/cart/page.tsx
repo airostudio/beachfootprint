@@ -2,130 +2,142 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { formatMoney } from "@/lib/format";
-import type { ProductSummary } from "@/lib/types";
+import { useCart } from "@/lib/cart";
 
-interface Line {
-  productId: string;
+interface ResolvedLine {
+  variantId: string;
+  handle: string;
+  title: string;
+  variantTitle: string | null;
+  imageUrl: string | null;
+  unitPriceCents: number;
   quantity: number;
-  product: ProductSummary;
+  lineTotalCents: number;
+  currency: string;
+  purchasable: boolean;
+  unavailableReason: string | null;
 }
 
-// Real cart persistence (carts/cart_items in supabase/schema.sql, synced from
-// "Add to Cart") isn't wired up yet — see README "What's stubbed" — so this
-// starts empty rather than pointing at fabricated product ids. Once
-// AddToCartActions writes here (client state, then a cart_id synced to the
-// DB), this page renders whatever's actually in it, no code change needed.
+interface ResolvedCart {
+  lines: ResolvedLine[];
+  currency: string;
+  subtotalCents: number;
+  shippingCents: number;
+  taxCents: number;
+  totalCents: number;
+}
+
 export default function CartPage() {
-  const [lines, setLines] = useState<Line[]>([]);
-  const [coupon, setCoupon] = useState("");
-  const [couponApplied, setCouponApplied] = useState<string | null>(null);
+  const { lines, setQuantity, remove, ready } = useCart();
+  const [cart, setCart] = useState<ResolvedCart | null>(null);
+  const [loading, setLoading] = useState(true);
 
-  const items = lines.map((line) => ({ line, product: line.product }));
+  // Prices always come from the server, so a stale or edited localStorage cart can never
+  // show (or charge) the wrong amount.
+  const price = useCallback(async () => {
+    if (lines.length === 0) {
+      setCart(null);
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    try {
+      const res = await fetch("/api/cart/lines", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ lines }),
+      });
+      setCart(res.ok ? await res.json() : null);
+    } finally {
+      setLoading(false);
+    }
+  }, [lines]);
 
-  const subtotal = items.reduce((sum, i) => sum + i.product.priceCents * i.line.quantity, 0);
-  const discount = couponApplied ? Math.round(subtotal * 0.1) : 0;
-  const shippingEstimate = subtotal > 0 ? 799 : 0;
-  const taxEstimate = Math.round((subtotal - discount) * 0.0725);
-  const total = subtotal - discount + shippingEstimate + taxEstimate;
+  useEffect(() => {
+    if (ready) price();
+  }, [ready, price]);
 
-  function updateQty(productId: string, quantity: number) {
-    setLines((prev) => prev.map((l) => (l.productId === productId ? { ...l, quantity: Math.max(1, quantity) } : l)));
-  }
-
-  function remove(productId: string) {
-    setLines((prev) => prev.filter((l) => l.productId !== productId));
-  }
+  const items = cart?.lines ?? [];
 
   return (
     <div className="container-page py-14">
       <h1 className="font-serif text-4xl mb-10">Shopping Cart</h1>
 
-      {items.length === 0 ? (
+      {ready && lines.length === 0 ? (
         <div className="text-center py-20">
           <p className="text-stone-500 mb-6">Your cart is empty.</p>
           <Link href="/shop" className="btn-primary">
             Continue Shopping
           </Link>
         </div>
+      ) : loading && !cart ? (
+        <p className="text-sm text-stone-500">Loading your cart…</p>
       ) : (
         <div className="grid lg:grid-cols-[1fr_360px] gap-12">
           <div className="divide-y divide-stone-200 border-t border-b border-stone-200">
-            {items.map(({ line, product }) => (
-              <div key={product.id} className="flex gap-4 py-6">
+            {items.map((line) => (
+              <div key={line.variantId} className="flex gap-4 py-6">
                 <div className="relative w-24 h-28 bg-stone-200 shrink-0">
-                  <Image src={product.imageUrl} alt={product.imageAlt} fill sizes="100px" className="object-cover" />
+                  {line.imageUrl && <Image src={line.imageUrl} alt={line.title} fill sizes="100px" className="object-cover" />}
                 </div>
                 <div className="flex-1">
-                  <Link href={`/product/${product.slug}`} className="text-sm hover:underline">
-                    {product.title}
+                  <Link href={`/product/${line.handle}`} className="font-medium hover:underline">
+                    {line.title}
                   </Link>
-                  <p className="text-sm text-stone-500 mt-1">{formatMoney(product.priceCents, product.currency)}</p>
+                  {line.variantTitle && <p className="text-sm text-stone-500">{line.variantTitle}</p>}
+                  {!line.purchasable && <p className="text-sm text-red-600 mt-1">{line.unavailableReason}</p>}
                   <div className="flex items-center gap-4 mt-3">
                     <input
                       type="number"
                       min={1}
                       value={line.quantity}
-                      onChange={(e) => updateQty(product.id, Number(e.target.value))}
-                      className="w-16 border border-stone-300 px-2 py-1 text-sm"
+                      onChange={(e) => setQuantity(line.variantId, Math.max(1, Number(e.target.value)))}
+                      className="w-20 border border-stone-300 px-3 py-1.5 text-sm"
                     />
-                    <button onClick={() => remove(product.id)} className="text-xs text-stone-500 underline">
+                    <button onClick={() => remove(line.variantId)} className="text-xs underline text-stone-500">
                       Remove
                     </button>
-                    <button className="text-xs text-stone-500 underline">Save for later</button>
                   </div>
                 </div>
-                <p className="text-sm">{formatMoney(product.priceCents * line.quantity, product.currency)}</p>
+                <div className="text-right">
+                  <p className="font-medium">{formatMoney(line.lineTotalCents, line.currency)}</p>
+                  {line.quantity > 1 && (
+                    <p className="text-xs text-stone-500">{formatMoney(line.unitPriceCents, line.currency)} each</p>
+                  )}
+                </div>
               </div>
             ))}
           </div>
 
-          <aside className="border border-stone-200 p-6 h-fit">
-            <div className="flex gap-2 mb-6">
-              <input
-                value={coupon}
-                onChange={(e) => setCoupon(e.target.value)}
-                placeholder="Coupon code"
-                className="flex-1 border border-stone-300 px-3 py-2 text-sm"
-              />
-              <button
-                className="btn-secondary px-4"
-                onClick={() => setCouponApplied(coupon || null)}
-              >
-                Apply
-              </button>
-            </div>
+          <aside className="h-fit border border-stone-200 p-6">
+            <h2 className="font-serif text-xl mb-4">Summary</h2>
+            <dl className="space-y-2 text-sm">
+              <div className="flex justify-between">
+                <dt className="text-stone-500">Subtotal</dt>
+                <dd>{formatMoney(cart?.subtotalCents ?? 0, cart?.currency ?? "USD")}</dd>
+              </div>
+              <div className="flex justify-between">
+                <dt className="text-stone-500">Shipping</dt>
+                <dd>{cart?.shippingCents ? formatMoney(cart.shippingCents, cart.currency) : "Free"}</dd>
+              </div>
+              <div className="flex justify-between border-t border-stone-200 pt-2 mt-2 font-medium">
+                <dt>Total</dt>
+                <dd>{formatMoney(cart?.totalCents ?? 0, cart?.currency ?? "USD")}</dd>
+              </div>
+            </dl>
 
-            <div className="space-y-2 text-sm">
-              <div className="flex justify-between">
-                <span className="text-stone-500">Subtotal</span>
-                <span>{formatMoney(subtotal)}</span>
-              </div>
-              {couponApplied && (
-                <div className="flex justify-between text-accent-dark">
-                  <span>Discount ({couponApplied})</span>
-                  <span>-{formatMoney(discount)}</span>
-                </div>
-              )}
-              <div className="flex justify-between">
-                <span className="text-stone-500">Estimated shipping</span>
-                <span>{formatMoney(shippingEstimate)}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-stone-500">Estimated tax</span>
-                <span>{formatMoney(taxEstimate)}</span>
-              </div>
-              <div className="flex justify-between text-base font-medium pt-3 border-t border-stone-200">
-                <span>Total</span>
-                <span>{formatMoney(total)}</span>
-              </div>
-            </div>
-
-            <Link href="/checkout" className="btn-primary w-full mt-6">
-              Proceed to Checkout
+            {items.some((l) => !l.purchasable) ? (
+              <p className="text-sm text-red-600 mt-6">Remove the unavailable items above to continue.</p>
+            ) : (
+              <Link href="/checkout" className="btn-primary w-full text-center block mt-6">
+                Checkout
+              </Link>
+            )}
+            <Link href="/shop" className="text-xs underline text-stone-500 mt-4 inline-block">
+              Continue shopping
             </Link>
-            <p className="text-xs text-stone-500 mt-3 text-center">Guest checkout available — no account required.</p>
           </aside>
         </div>
       )}

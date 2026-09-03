@@ -15,8 +15,9 @@ interface StoreSettings {
     maxPriceCents?: number;
     ignorePriceChangeBelowPercent?: number;
     compareAtRule?: PricingRule;
+    rule?: PricingRule;
   };
-  import: { defaultStatus: "draft" | "published" };
+  import: { defaultStatus: "draft" | "published"; targetCurrency?: string; shipToCountry?: string };
   stock: { outOfStockBehavior: "mark_unavailable" | "keep_visible"; ignoreStockChangeBelowUnits?: number };
   shipping: { preferredLogisticsService?: string };
   notifications: {
@@ -28,6 +29,20 @@ interface StoreSettings {
     fulfillmentFailed: boolean;
   };
 }
+
+// Two-decimal currencies only. Prices are held as integer cents throughout, and a zero-decimal
+// currency (JPY, KRW) would be charged 100x under that model — so it is not offered here.
+const CURRENCIES = ["USD", "AUD", "NZD", "GBP", "EUR", "CAD", "SGD"];
+const SHIP_TO_COUNTRIES: Array<[string, string]> = [
+  ["US", "United States"],
+  ["AU", "Australia"],
+  ["NZ", "New Zealand"],
+  ["GB", "United Kingdom"],
+  ["CA", "Canada"],
+  ["SG", "Singapore"],
+];
+
+const DEFAULT_MARKUP_RULE: PricingRule = { type: "percent_margin", marginRate: 0.35, rounding: "up-95" };
 
 const ROUNDING_LABELS: Record<RoundingMode, string> = { none: "No rounding", "up-95": "Round up to .95", "up-99": "Round up to .99", "up-00": "Round up to whole dollar" };
 
@@ -58,6 +73,40 @@ export default function DropshipSettingsPage() {
       })
       .catch((err) => setLoadError(err instanceof Error ? err.message : "Could not load settings"));
   }, []);
+
+  const markupRule: PricingRule = settings?.pricing.rule ?? DEFAULT_MARKUP_RULE;
+
+  /** Mirrors the engine's applyRounding, so the worked example matches what an import actually produces. */
+  function applyRounding(cents: number, mode: RoundingMode): number {
+    if (cents <= 0) return 0;
+    if (mode === "none") return Math.round(cents);
+    const ending = mode === "up-95" ? 95 : mode === "up-99" ? 99 : 0;
+    const dollars = Math.floor(cents / 100);
+    if (mode === "up-00") return cents % 100 === 0 ? cents : (dollars + 1) * 100;
+    const target = dollars * 100 + ending;
+    return cents <= target ? target : (dollars + 1) * 100 + ending;
+  }
+
+  const EXAMPLE_COST_CENTS = 1000;
+
+  function formatMoney(cents: number): string {
+    const currency = settings?.import.targetCurrency ?? "USD";
+    return new Intl.NumberFormat("en-US", { style: "currency", currency }).format(cents / 100);
+  }
+
+  function formatExampleCost(): string {
+    return formatMoney(EXAMPLE_COST_CENTS);
+  }
+
+  function formatExamplePrice(): string {
+    const raw =
+      markupRule.type === "fixed_markup"
+        ? EXAMPLE_COST_CENTS + markupRule.markupCents
+        : markupRule.type === "percent_margin"
+          ? EXAMPLE_COST_CENTS * (1 + markupRule.marginRate)
+          : EXAMPLE_COST_CENTS;
+    return formatMoney(applyRounding(raw, markupRule.rounding));
+  }
 
   function update<K extends keyof StoreSettings>(section: K, patch: Partial<StoreSettings[K]>) {
     setSettings((prev) => (prev ? { ...prev, [section]: { ...prev[section], ...patch } } : prev));
@@ -121,6 +170,86 @@ export default function DropshipSettingsPage() {
       {/* Pricing */}
       <section className="card p-6 mb-6">
         <h2 className="font-serif text-xl mb-4">Pricing</h2>
+
+        <div className="border-b border-stone-200 pb-5 mb-5">
+          <p className="text-xs font-medium mb-1">Markup on imported products</p>
+          <p className="text-xs text-stone-500 mb-3">
+            How every imported variant&rsquo;s price is calculated from what the supplier charges. This is the number
+            that decides your margin.
+          </p>
+          <div className="grid grid-cols-3 gap-3">
+            <label className="text-sm">
+              <span className="block text-xs text-stone-500 mb-1">Method</span>
+              <select
+                className="w-full border border-stone-300 px-3 py-2 text-sm"
+                value={markupRule.type}
+                onChange={(e) =>
+                  update("pricing", {
+                    rule:
+                      e.target.value === "fixed_markup"
+                        ? { type: "fixed_markup", markupCents: 1000, rounding: markupRule.rounding }
+                        : { type: "percent_margin", marginRate: 0.35, rounding: markupRule.rounding },
+                  })
+                }
+              >
+                <option value="percent_margin">Percentage of cost</option>
+                <option value="fixed_markup">Fixed amount per item</option>
+              </select>
+            </label>
+
+            {markupRule.type === "percent_margin" ? (
+              <label className="text-sm">
+                <span className="block text-xs text-stone-500 mb-1">Markup (%)</span>
+                <input
+                  type="number"
+                  step="1"
+                  min="0"
+                  className="w-full border border-stone-300 px-3 py-2 text-sm"
+                  value={Math.round(markupRule.marginRate * 100)}
+                  onChange={(e) =>
+                    update("pricing", {
+                      rule: { type: "percent_margin", marginRate: (Number(e.target.value) || 0) / 100, rounding: markupRule.rounding },
+                    })
+                  }
+                />
+              </label>
+            ) : (
+              <label className="text-sm">
+                <span className="block text-xs text-stone-500 mb-1">Markup ($ per item)</span>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  className="w-full border border-stone-300 px-3 py-2 text-sm"
+                  value={centsToDollars(markupRule.type === "fixed_markup" ? markupRule.markupCents : undefined)}
+                  onChange={(e) =>
+                    update("pricing", {
+                      rule: { type: "fixed_markup", markupCents: dollarsToCents(e.target.value) ?? 0, rounding: markupRule.rounding },
+                    })
+                  }
+                />
+              </label>
+            )}
+
+            <label className="text-sm">
+              <span className="block text-xs text-stone-500 mb-1">Rounding</span>
+              <select
+                className="w-full border border-stone-300 px-3 py-2 text-sm"
+                value={markupRule.rounding}
+                onChange={(e) => update("pricing", { rule: { ...markupRule, rounding: e.target.value as RoundingMode } })}
+              >
+                {(Object.keys(ROUNDING_LABELS) as RoundingMode[]).map((mode) => (
+                  <option key={mode} value={mode}>
+                    {ROUNDING_LABELS[mode]}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+          <p className="text-xs text-stone-500 mt-2">
+            Example: a {formatExampleCost()} item sells for <span className="font-medium">{formatExamplePrice()}</span>.
+          </p>
+        </div>
 
         <div className="grid grid-cols-2 gap-4 mb-4">
           <label className="text-sm">
@@ -197,6 +326,42 @@ export default function DropshipSettingsPage() {
       {/* Import */}
       <section className="card p-6 mb-6">
         <h2 className="font-serif text-xl mb-4">Import</h2>
+
+        <div className="grid grid-cols-2 gap-4 mb-4">
+          <label className="text-sm">
+            <span className="block text-xs text-stone-500 mb-1">Sell in currency</span>
+            <select
+              className="w-full border border-stone-300 px-3 py-2 text-sm"
+              value={settings.import.targetCurrency ?? "USD"}
+              onChange={(e) => update("import", { targetCurrency: e.target.value })}
+            >
+              {CURRENCIES.map((code) => (
+                <option key={code} value={code}>
+                  {code}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="text-sm">
+            <span className="block text-xs text-stone-500 mb-1">Price for delivery to</span>
+            <select
+              className="w-full border border-stone-300 px-3 py-2 text-sm"
+              value={settings.import.shipToCountry ?? "US"}
+              onChange={(e) => update("import", { shipToCountry: e.target.value })}
+            >
+              {SHIP_TO_COUNTRIES.map(([code, label]) => (
+                <option key={code} value={code}>
+                  {label}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+        <p className="text-xs text-stone-500 mb-4">
+          AliExpress quotes supplier costs in this currency for this destination, so your markup is calculated on what
+          you actually pay to ship to your customers — and imported prices are already in the currency you charge in.
+        </p>
+
         <label className="text-sm block">
           <span className="block text-xs text-stone-500 mb-1">New imports land as</span>
           <select

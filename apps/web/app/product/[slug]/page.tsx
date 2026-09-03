@@ -80,7 +80,7 @@ export default async function ProductPage({ params }: Props) {
           <p className="text-sm text-stone-600 leading-relaxed mb-2">{product.shortDescription}</p>
           <p className="text-xs text-stone-500">{product.readyToShip ? "Ready to ship" : "Made to order"}</p>
 
-          <AddToCartActions priceCents={product.priceCents} currency={product.currency} />
+          <AddToCartActions priceCents={product.priceCents} currency={product.currency} variants={product.variants} />
 
           <ProductTabs product={product} />
         </div>
