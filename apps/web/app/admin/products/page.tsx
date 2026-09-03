@@ -21,7 +21,7 @@ export default async function AdminProductsPage() {
             </form>
           )}
           <Link href="/admin/products/import" className="btn-secondary">
-            Import CSV
+            Import Products
           </Link>
           <button className="btn-primary">New Product</button>
         </div>

@@ -7,6 +7,7 @@ const sections = [
   { href: "/admin/orders", label: "Orders" },
   { href: "/admin/cms", label: "CMS & Banners" },
   { href: "/admin/aliexpress", label: "AliExpress" },
+  { href: "/admin/aliexpress/settings", label: "Dropship Settings" },
 ];
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
