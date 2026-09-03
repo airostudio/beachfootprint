@@ -120,11 +120,21 @@ export async function commitAliExpressImport(
     });
   }
 
-  if (isNewProduct && staged.imageUrls.length > 0) {
-    await supabase.from("product_media").insert(staged.imageUrls.map((url, position) => ({ product_id: productId, url, position })));
+  // Media is synced on EVERY commit, not just for new products: re-confirming an already-imported
+  // product (the normal way to pick up corrected images) would otherwise take the update path and
+  // never attach them. The staged editor is where images are curated, so it owns the set — replace
+  // rather than append, so re-confirming can't accumulate duplicates.
+  if (staged.imageUrls.length > 0) {
+    await supabase.from("product_media").delete().eq("product_id", productId);
+    const { error: mediaError } = await supabase
+      .from("product_media")
+      .insert(staged.imageUrls.map((url, position) => ({ product_id: productId, url, position, alt: staged.title })));
+    // Previously unchecked, so a failed media insert left a product with no images while the
+    // confirm still reported success.
+    if (mediaError) throw new Error(`Product saved but its images could not be attached: ${mediaError.message}`);
   }
 
-  if (isNewProduct && staged.categoryId) {
+  if (staged.categoryId) {
     await supabase
       .from("product_categories")
       .upsert({ product_id: productId, category_id: staged.categoryId }, { onConflict: "product_id,category_id" });

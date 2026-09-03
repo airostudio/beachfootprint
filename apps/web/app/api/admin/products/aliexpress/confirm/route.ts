@@ -62,7 +62,8 @@ export async function POST(request: Request) {
       // runtime logs alone — response bodies aren't recorded there.
       console.log(
         `[aliexpress/confirm] committed staged=${stagedId} product=${committed.productId} handle=${committed.handle} ` +
-          `new=${committed.isNewProduct} status=${staged.publish ? "PUBLISHED" : "DRAFT"} tenant=${tenantId} variants=${committed.variantIds.length}`,
+          `new=${committed.isNewProduct} status=${staged.publish ? "PUBLISHED" : "DRAFT"} tenant=${tenantId} ` +
+          `variants=${committed.variantIds.length} images=${staged.imageUrls.length}`,
       );
 
       results.push({
