@@ -2,6 +2,10 @@ import { NextResponse } from "next/server";
 import { triggerTrackingSync } from "@/lib/dropshipEngine";
 
 export const runtime = "nodejs";
+// Never prerender or cache an admin endpoint: Next will happily statically optimise a
+// route whose GET succeeds at build time, after which every other method on it returns a
+// bodiless 405 and the GET serves a stale build-time snapshot.
+export const dynamic = "force-dynamic";
 
 /**
  * Manually triggers a tracking poll for every in-flight AliExpress order —

@@ -4,6 +4,10 @@ import { resolveTenantId } from "@/lib/import/tenant";
 import { getSettings } from "@/lib/dropshipEngine";
 
 export const runtime = "nodejs";
+// Never prerender or cache an admin endpoint: Next will happily statically optimise a
+// route whose GET succeeds at build time, after which every other method on it returns a
+// bodiless 405 and the GET serves a stale build-time snapshot.
+export const dynamic = "force-dynamic";
 
 /** "sk_live_…"/"pk_live_…" vs "sk_test_…" — the only part of a key that's safe to report. */
 function keyMode(key: string | undefined): "live" | "test" | null {
