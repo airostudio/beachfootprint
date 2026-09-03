@@ -1,7 +1,7 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createMapping } from "@/lib/dropshipEngine";
-import type { ImportProductResult } from "@/lib/dropshipEngine";
+import type { StagedProduct } from "@/lib/import/staging";
 
 function slugify(value: string): string {
   return value
@@ -19,29 +19,26 @@ export interface CommitResult {
 }
 
 /**
- * Writes an already-fetched (and already AI-rewritten) AliExpress import into this store's own
- * products/product_variants/product_media/product_categories tables and registers each variant's
- * mapping back with the engine. Shared by the direct one-shot import route and the
- * preview-then-confirm staging flow — the engine call (fetch + AI copy) happens once, upstream of
- * this, so confirming a staged product never re-runs it.
+ * Writes a reviewed staged product into this store's own products/product_variants/product_media/
+ * product_categories tables and registers each variant's mapping back with the engine.
+ *
+ * Everything written here comes from the staged row as the admin last edited it — the engine fetch
+ * and AI rewrite happened when the product was staged, so confirming never re-runs them and never
+ * discards a manual edit.
  */
 export async function commitAliExpressImport(
   supabase: SupabaseClient,
-  params: {
-    tenantId: string;
-    imported: ImportProductResult;
-    publish?: boolean;
-    /** Category to link the product to (a new product only) — pass the user's choice, or a suggested one, or omit to leave uncategorized. */
-    categoryId?: string | null;
-  },
+  params: { tenantId: string; staged: StagedProduct },
 ): Promise<CommitResult> {
-  const { imported } = params;
+  const { staged } = params;
+  const activeSkus = staged.skus.filter((sku) => sku.isActive || sku.stockOnHand > 0 || staged.skus.length === 1);
+  const skus = activeSkus.length > 0 ? activeSkus : staged.skus;
 
   const { data: existingVariant } = await supabase
     .from("product_variants")
     .select("product_id")
     .eq("supplier", "dropship-engine")
-    .eq("supplier_product_id", imported.aliexpressProductId)
+    .eq("supplier_product_id", staged.aliexpressProductId)
     .limit(1)
     .maybeSingle();
 
@@ -49,27 +46,33 @@ export async function commitAliExpressImport(
   let handle: string;
   let isNewProduct = false;
 
+  const productFields = {
+    title: staged.title,
+    short_description: staged.shortDescription || null,
+    description: staged.description,
+    seo_title: staged.seoTitle,
+    seo_desc: staged.seoDesc,
+    brand: staged.brand ?? "Beach Footprints",
+    status: staged.publish ? "PUBLISHED" : "DRAFT",
+  };
+
   if (existingVariant) {
     productId = existingVariant.product_id as string;
     const { data: existingProduct } = await supabase.from("products").select("handle").eq("id", productId).single();
-    handle = existingProduct?.handle ?? slugify(imported.onBrandName);
-    await supabase.from("products").update({ title: imported.onBrandName, description: imported.description }).eq("id", productId);
+    handle = (existingProduct?.handle as string | undefined) ?? slugify(staged.title);
+    await supabase.from("products").update(productFields).eq("id", productId);
   } else {
     isNewProduct = true;
-    handle = `${slugify(imported.onBrandName)}-${imported.aliexpressProductId}`;
+    handle = `${slugify(staged.title)}-${staged.aliexpressProductId}`;
     const { data: inserted, error } = await supabase
       .from("products")
       .insert({
         tenant_id: params.tenantId,
-        product_type: "STANDARD",
-        title: imported.onBrandName,
+        product_type: staged.productType,
         handle,
-        short_description: imported.description.split("\n\n")[0]?.split("\n").slice(1).join(" ").slice(0, 300),
-        description: imported.description,
-        status: params.publish ? "PUBLISHED" : "DRAFT",
-        brand: "Beach Footprints",
         shipping_class: "STANDARD",
         stock_policy: "IN_STOCK",
+        ...productFields,
       })
       .select("id")
       .single();
@@ -78,7 +81,7 @@ export async function commitAliExpressImport(
   }
 
   const variantIds: string[] = [];
-  for (const sku of imported.skus) {
+  for (const sku of skus) {
     const { data: upserted, error } = await supabase
       .from("product_variants")
       .upsert(
@@ -87,14 +90,15 @@ export async function commitAliExpressImport(
           title: sku.properties,
           sku: `AE-${sku.aliexpressSkuId}`,
           price: sku.retailPriceCents,
-          currency: imported.currencyCode,
+          compare_at: sku.compareAtCents,
+          currency: staged.currencyCode,
           cost: sku.supplierCostCents,
           margin_rate: sku.marginRate,
           supplier: "dropship-engine",
-          supplier_product_id: imported.aliexpressProductId,
+          supplier_product_id: staged.aliexpressProductId,
           supplier_sku_id: sku.aliexpressSkuId,
           supplier_synced_at: new Date().toISOString(),
-          is_active: sku.stockOnHand > 0,
+          is_active: sku.isActive,
         },
         { onConflict: "product_id,sku" },
       )
@@ -110,25 +114,33 @@ export async function commitAliExpressImport(
     await createMapping({
       externalProductId: productId,
       externalVariantId: variantId,
-      aliexpressProductId: imported.aliexpressProductId,
+      aliexpressProductId: staged.aliexpressProductId,
       aliexpressSkuId: sku.aliexpressSkuId,
-      onBrandName: imported.onBrandName,
+      onBrandName: staged.title,
     });
   }
 
-  if (isNewProduct && imported.imageUrls.length > 0) {
-    await supabase.from("product_media").insert(imported.imageUrls.map((url, position) => ({ product_id: productId, url, position })));
+  if (isNewProduct && staged.imageUrls.length > 0) {
+    await supabase.from("product_media").insert(staged.imageUrls.map((url, position) => ({ product_id: productId, url, position })));
   }
 
-  if (isNewProduct && params.categoryId) {
-    await supabase.from("product_categories").upsert({ product_id: productId, category_id: params.categoryId }, { onConflict: "product_id,category_id" });
+  if (isNewProduct && staged.categoryId) {
+    await supabase
+      .from("product_categories")
+      .upsert({ product_id: productId, category_id: staged.categoryId }, { onConflict: "product_id,category_id" });
   }
 
   await supabase.from("fulfillment_logs").insert({
     tenant_id: params.tenantId,
     variant_id: variantIds[0] ?? null,
     event: "product_imported",
-    detail: { aliexpressProductId: imported.aliexpressProductId, handle, isNewProduct, categoryId: params.categoryId ?? null },
+    detail: {
+      aliexpressProductId: staged.aliexpressProductId,
+      handle,
+      isNewProduct,
+      categoryId: staged.categoryId,
+      stagedId: staged.id,
+    },
   });
 
   return { productId, handle, isNewProduct, variantIds };

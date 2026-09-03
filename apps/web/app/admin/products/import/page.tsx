@@ -18,43 +18,18 @@ interface ConversionSummary {
   typeCounts: Record<string, number>;
 }
 
-interface ImportedSku {
-  aliexpressSkuId: string;
-  properties: string | null;
-  retailPriceCents: number;
-  supplierCostCents: number;
-  marginRate: number;
-  stockOnHand: number;
-}
+type LineStatus = "queued" | "staging" | "staged" | "failed";
 
-interface ImportProductResult {
-  aliexpressProductId: string;
-  onBrandName: string;
-  description: string;
-  imageUrls: string[];
-  currencyCode: string;
-  skus: ImportedSku[];
-}
-
-interface CategoryOption {
-  id: string;
-  handle: string;
-  name: string;
-}
-
-type StagedStatus = "staging" | "ready" | "confirming" | "confirmed" | "error";
-
-interface StagedProduct {
+interface BulkLine {
   key: string;
-  status: StagedStatus;
   input: string;
-  imported: ImportProductResult | null;
-  categoryId: string | null;
-  suggestedCategoryHandle: string | null;
+  productId: string | null;
+  status: LineStatus;
+  title: string | null;
   error: string | null;
-  selected: boolean;
-  commitHandle: string | null;
 }
+
+const MAX_BULK_LINES = 50;
 
 const MODE_CONFIG: Record<Mode, { label: string; accept: string; createEndpoint: string; contentType: string }> = {
   csv: {
@@ -97,15 +72,16 @@ export default function ProductImportPage() {
 
   const [aliexpressInput, setAliexpressInput] = useState("");
   const [aliexpressSearch, setAliexpressSearch] = useState("");
-  const [staged, setStaged] = useState<StagedProduct[]>([]);
-  const [categories, setCategories] = useState<CategoryOption[]>([]);
-  const [confirmingAll, setConfirmingAll] = useState(false);
+  const [bulkLines, setBulkLines] = useState<BulkLine[]>([]);
+  const [staging, setStaging] = useState(false);
+  const [stagedCount, setStagedCount] = useState<number | null>(null);
 
+  // How many products are already sitting in the review queue, so the page can point at it.
   useEffect(() => {
-    fetch("/api/admin/categories")
+    fetch("/api/admin/products/aliexpress/staged")
       .then((res) => res.json())
-      .then((data) => setCategories(data.categories ?? []))
-      .catch(() => setCategories([]));
+      .then((data) => setStagedCount(Array.isArray(data.staged) ? data.staged.length : null))
+      .catch(() => setStagedCount(null));
   }, []);
 
   function openAliExpressSearch() {
@@ -115,74 +91,80 @@ export default function ProductImportPage() {
     window.open(url, "_blank", "noopener,noreferrer");
   }
 
-  function updateStaged(key: string, patch: Partial<StagedProduct>) {
-    setStaged((prev) => prev.map((s) => (s.key === key ? { ...s, ...patch } : s)));
-  }
+  /**
+   * Stages every pasted line, one request per product. Sequential on purpose: each call does a
+   * live AliExpress fetch plus an AI rewrite, so this keeps every request small (no function
+   * timeout on a big batch) and lets the admin watch each line resolve or fail on its own.
+   */
+  async function stageBulk() {
+    const rawLines = aliexpressInput
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean);
 
-  // Adds a product to the review list and immediately runs it through the engine's fetch + AI
-  // rewrite + category suggestion. Nothing is written to the store yet — that only happens once
-  // this staged item is individually confirmed (or swept up by "Confirm selected").
-  async function stageAliExpressProduct() {
-    const productId = extractAliExpressProductId(aliexpressInput);
-    if (!productId) {
-      setMessage("Paste a valid AliExpress product URL (e.g. aliexpress.com/item/1005006308361133.html) or a bare product id.");
+    if (rawLines.length === 0) {
+      setMessage("Paste at least one AliExpress product link — one per line.");
       return;
     }
+    if (rawLines.length > MAX_BULK_LINES) {
+      setMessage(`That's ${rawLines.length} lines — please paste at most ${MAX_BULK_LINES} at a time.`);
+      return;
+    }
+
     setMessage(null);
-    const key = `${productId}-${Date.now()}`;
-    setStaged((prev) => [
-      { key, status: "staging", input: productId, imported: null, categoryId: null, suggestedCategoryHandle: null, error: null, selected: true, commitHandle: null },
-      ...prev,
-    ]);
-    setAliexpressInput("");
+    const lines: BulkLine[] = rawLines.map((input, i) => {
+      const productId = extractAliExpressProductId(input);
+      return {
+        key: `${i}-${input}`,
+        input,
+        productId,
+        status: productId ? "queued" : "failed",
+        title: null,
+        error: productId ? null : "Not a recognisable AliExpress product link or id",
+      };
+    });
+    setBulkLines(lines);
+    setStaging(true);
 
-    try {
-      const res = await fetch("/api/admin/products/aliexpress/preview", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ productId }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Could not fetch this product");
-      updateStaged(key, {
-        status: "ready",
-        imported: data as ImportProductResult,
-        categoryId: data.suggestedCategoryId ?? null,
-        suggestedCategoryHandle: data.suggestedCategoryHandle ?? null,
-      });
-    } catch (err) {
-      updateStaged(key, { status: "error", error: err instanceof Error ? err.message : "Could not fetch this product" });
+    for (const line of lines) {
+      if (!line.productId) continue;
+      setBulkLines((prev) => prev.map((l) => (l.key === line.key ? { ...l, status: "staging" } : l)));
+      try {
+        const res = await fetch("/api/admin/products/aliexpress/stage", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ productId: line.productId, sourceUrl: line.input }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error ?? "Could not stage this product");
+        setBulkLines((prev) =>
+          prev.map((l) =>
+            l.key === line.key
+              ? data.status === "failed"
+                ? { ...l, status: "failed", error: data.error ?? "AliExpress rejected this product" }
+                : { ...l, status: "staged", title: data.title }
+              : l,
+          ),
+        );
+      } catch (err) {
+        setBulkLines((prev) =>
+          prev.map((l) =>
+            l.key === line.key ? { ...l, status: "failed", error: err instanceof Error ? err.message : "Could not stage" } : l,
+          ),
+        );
+      }
     }
+
+    setStaging(false);
+    fetch("/api/admin/products/aliexpress/staged")
+      .then((res) => res.json())
+      .then((data) => setStagedCount(Array.isArray(data.staged) ? data.staged.length : null))
+      .catch(() => undefined);
   }
 
-  async function confirmStaged(item: StagedProduct) {
-    if (!item.imported) return;
-    updateStaged(item.key, { status: "confirming", error: null });
-    try {
-      const res = await fetch("/api/admin/products/aliexpress/confirm", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ imported: item.imported, categoryId: item.categoryId }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Could not add this product to the store");
-      updateStaged(item.key, { status: "confirmed", commitHandle: data.handle, selected: false });
-    } catch (err) {
-      updateStaged(item.key, { status: "error", error: err instanceof Error ? err.message : "Could not add this product to the store" });
-    }
-  }
-
-  async function confirmSelected() {
-    setConfirmingAll(true);
-    const toConfirm = staged.filter((s) => s.selected && s.status === "ready");
-    for (const item of toConfirm) {
-      await confirmStaged(item);
-    }
-    setConfirmingAll(false);
-  }
-
-  const readyStaged = staged.filter((s) => s.status === "ready");
-  const allReadySelected = readyStaged.length > 0 && readyStaged.every((s) => s.selected);
+  const stagedOk = bulkLines.filter((l) => l.status === "staged").length;
+  const stagedFailed = bulkLines.filter((l) => l.status === "failed").length;
+  const pastedCount = aliexpressInput.split("\n").map((l) => l.trim()).filter(Boolean).length;
 
   async function runImport(file: File) {
     const config = MODE_CONFIG[mode];
@@ -333,130 +315,64 @@ export default function ProductImportPage() {
             </button>
           </div>
 
-          <p className="text-xs font-medium mb-2 mt-6">Step 2 — Add it to the review list</p>
+          <p className="text-xs font-medium mb-2 mt-6">Step 2 &mdash; Paste the products, one link per line</p>
           <p className="text-xs text-stone-500 leading-relaxed mb-4">
-            Paste the product page link (or its bare product id) below. It&rsquo;s added to the list underneath and the
-            engine immediately fetches it, applies your pricing rule, and — if AI copy rewriting is on — rewrites the
-            title and description to be SEO-friendly and on-brand, and suggests a category. Nothing is added to the
-            store yet: review each item below, adjust its category if needed, then confirm it (or select several and
-            confirm them together).
+            Paste up to {MAX_BULK_LINES} product links at once, one per line. Each is fetched from AliExpress,
+            priced by your rule, rewritten for SEO and given a suggested category, then parked on the{" "}
+            <span className="font-medium">staging page</span> for review. Nothing reaches the store until you
+            confirm it there.
           </p>
-          <div className="flex gap-2 mb-4">
-            <input
-              type="text"
-              value={aliexpressInput}
-              onChange={(e) => setAliexpressInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") stageAliExpressProduct();
-              }}
-              placeholder="https://www.aliexpress.com/item/1005006308361133.html"
-              className="flex-1 border border-stone-300 px-3 py-2 text-sm"
-            />
-            <button className="btn-primary whitespace-nowrap" disabled={!aliexpressInput} onClick={stageAliExpressProduct}>
-              Add to review list
+          <textarea
+            value={aliexpressInput}
+            onChange={(e) => setAliexpressInput(e.target.value)}
+            rows={8}
+            placeholder={"https://www.aliexpress.com/item/1005006308361133.html\nhttps://www.aliexpress.com/item/1005007112223334.html\n1005006999888777"}
+            className="w-full border border-stone-300 px-3 py-2 text-sm font-mono mb-2"
+            disabled={staging}
+          />
+          <div className="flex items-center gap-3 mb-4">
+            <button className="btn-primary" disabled={staging || pastedCount === 0} onClick={stageBulk}>
+              {staging ? "Staging\u2026" : `Stage ${pastedCount || ""} product${pastedCount === 1 ? "" : "s"}`.trim()}
             </button>
+            <span className="text-xs text-stone-500">
+              {pastedCount} line{pastedCount === 1 ? "" : "s"} pasted
+            </span>
           </div>
           {message && <p className="text-sm text-red-600 mb-4">{message}</p>}
 
-          {staged.length > 0 && (
-            <div className="mt-6">
-              <div className="flex justify-between items-center mb-3">
-                <p className="text-xs font-medium">
-                  Review list ({staged.length}){readyStaged.length > 0 && ` · ${readyStaged.length} ready to confirm`}
-                </p>
-                {readyStaged.length > 0 && (
-                  <div className="flex gap-3 items-center">
-                    <label className="flex items-center gap-1.5 text-xs text-stone-600 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={allReadySelected}
-                        onChange={(e) => {
-                          const checked = e.target.checked;
-                          setStaged((prev) => prev.map((s) => (s.status === "ready" ? { ...s, selected: checked } : s)));
-                        }}
-                      />
-                      Select all
-                    </label>
-                    <button
-                      className="btn-secondary text-xs"
-                      disabled={confirmingAll || !staged.some((s) => s.selected && s.status === "ready")}
-                      onClick={confirmSelected}
-                    >
-                      {confirmingAll ? "Confirming…" : "Confirm selected"}
-                    </button>
-                  </div>
-                )}
+          {bulkLines.length > 0 && (
+            <div className="border border-stone-200 mb-4">
+              <div className="px-3 py-2 border-b border-stone-200 text-xs text-stone-600 flex justify-between">
+                <span>
+                  {stagedOk} staged{stagedFailed > 0 && ` \u00b7 ${stagedFailed} failed`}
+                </span>
+                <span className="text-stone-400">{staging ? "Working\u2026" : "Done"}</span>
               </div>
-
-              <div className="space-y-3">
-                {staged.map((item) => (
-                  <div key={item.key} className="border border-stone-200 p-4 flex gap-4">
-                    {item.status === "ready" && (
-                      <input
-                        type="checkbox"
-                        className="mt-1"
-                        checked={item.selected}
-                        onChange={(e) => updateStaged(item.key, { selected: e.target.checked })}
-                      />
-                    )}
-                    {item.imported?.imageUrls[0] && (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img src={item.imported.imageUrls[0]} alt="" className="w-16 h-16 object-cover flex-shrink-0" />
-                    )}
-                    <div className="flex-1 min-w-0">
-                      {item.status === "staging" && <p className="text-sm text-stone-500">Fetching &amp; rewriting {item.input}…</p>}
-                      {item.status === "error" && (
-                        <>
-                          <p className="text-sm text-red-600">{item.error}</p>
-                          <p className="text-xs text-stone-400">Product {item.input}</p>
-                        </>
-                      )}
-                      {item.status === "confirmed" && (
-                        <p className="text-sm">
-                          Added <span className="font-medium">{item.commitHandle}</span> — see it in{" "}
-                          <Link href="/admin/products" className="underline">
-                            Products
-                          </Link>
-                          .
-                        </p>
-                      )}
-                      {(item.status === "ready" || item.status === "confirming") && item.imported && (
-                        <>
-                          <p className="text-sm font-medium truncate">{item.imported.onBrandName}</p>
-                          <p className="text-xs text-stone-500 line-clamp-2 mt-1">{item.imported.description.slice(0, 220)}</p>
-                          <div className="flex items-center gap-2 mt-2">
-                            <select
-                              className="border border-stone-300 text-xs px-2 py-1"
-                              value={item.categoryId ?? ""}
-                              disabled={item.status === "confirming"}
-                              onChange={(e) => updateStaged(item.key, { categoryId: e.target.value || null })}
-                            >
-                              <option value="">No category</option>
-                              {categories.map((c) => (
-                                <option key={c.id} value={c.id}>
-                                  {c.name}
-                                </option>
-                              ))}
-                            </select>
-                            {item.suggestedCategoryHandle && !item.categoryId && (
-                              <span className="text-xs text-stone-400">suggested: {item.suggestedCategoryHandle}</span>
-                            )}
-                            <button
-                              className="btn-secondary text-xs ml-auto"
-                              disabled={item.status === "confirming"}
-                              onClick={() => confirmStaged(item)}
-                            >
-                              {item.status === "confirming" ? "Confirming…" : "Confirm"}
-                            </button>
-                          </div>
-                        </>
-                      )}
-                    </div>
-                  </div>
+              <ul className="max-h-64 overflow-y-auto text-xs">
+                {bulkLines.map((line) => (
+                  <li key={line.key} className="px-3 py-2 border-b border-stone-100 flex gap-3">
+                    <span className="w-16 flex-shrink-0 text-stone-400">
+                      {line.status === "queued" && "queued"}
+                      {line.status === "staging" && "fetching"}
+                      {line.status === "staged" && "\u2713 staged"}
+                      {line.status === "failed" && <span className="text-red-600">failed</span>}
+                    </span>
+                    <span className="flex-1 min-w-0 truncate">{line.title ?? line.input}</span>
+                    {line.error && <span className="text-red-600 flex-shrink-0 max-w-[45%] truncate">{line.error}</span>}
+                  </li>
                 ))}
-              </div>
+              </ul>
             </div>
           )}
+
+          <p className="text-xs font-medium mb-2 mt-6">Step 3 &mdash; Review and confirm</p>
+          <p className="text-xs text-stone-500 leading-relaxed mb-3">
+            Open the staging page to see every product with its images, adjust the copy, pricing, images and
+            category, then confirm the ones you want live.
+          </p>
+          <Link href="/admin/aliexpress/staging" className="btn-secondary inline-block">
+            Go to staging{stagedCount !== null && stagedCount > 0 ? ` (${stagedCount})` : ""} &rarr;
+          </Link>
         </div>
       )}
 
