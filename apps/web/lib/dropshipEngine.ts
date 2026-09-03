@@ -20,6 +20,11 @@ export interface EngineAddress {
   phone: string;
 }
 
+export interface SkuOption {
+  name: string | null;
+  value: string;
+}
+
 export interface ImportedSku {
   aliexpressSkuId: string;
   properties: string | null;
@@ -27,6 +32,8 @@ export interface ImportedSku {
   stockOnHand: number;
   retailPriceCents: number;
   marginRate: number;
+  compareAtPriceCents?: number | null;
+  options?: SkuOption[];
 }
 
 export interface ImportProductResult {
@@ -36,6 +43,9 @@ export interface ImportProductResult {
   imageUrls: string[];
   currencyCode: string;
   skus: ImportedSku[];
+  packageWeightGrams?: number | null;
+  productUnit?: string | null;
+  aliexpressCategoryId?: number | null;
 }
 
 export interface FulfillOrderResult {
@@ -66,8 +76,16 @@ export interface StoreSettings {
     maxPriceCents?: number;
     ignorePriceChangeBelowPercent?: number;
     compareAtRule?: PricingRule;
+    /** The markup applied to every imported SKU's supplier cost. */
+    rule?: PricingRule;
   };
-  import: { defaultStatus: "draft" | "published" };
+  import: {
+    defaultStatus: "draft" | "published";
+    /** ISO 4217 currency the store sells in — AliExpress quotes imports in it. */
+    targetCurrency?: string;
+    /** ISO 3166-1 alpha-2 destination the price is quoted for. */
+    shipToCountry?: string;
+  };
   stock: { outOfStockBehavior: "mark_unavailable" | "keep_visible"; ignoreStockChangeBelowUnits?: number };
   shipping: { preferredLogisticsService?: string };
   notifications: {

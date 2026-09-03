@@ -6,6 +6,7 @@ const sections = [
   { href: "/admin/categories", label: "Categories" },
   { href: "/admin/orders", label: "Orders" },
   { href: "/admin/cms", label: "CMS & Banners" },
+  { href: "/admin/payments", label: "Payments" },
   { href: "/admin/aliexpress", label: "AliExpress" },
   { href: "/admin/aliexpress/staging", label: "AliExpress Staging" },
   { href: "/admin/aliexpress/settings", label: "Dropship Settings" },

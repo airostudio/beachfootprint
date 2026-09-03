@@ -47,6 +47,7 @@ export async function commitAliExpressImport(
   let isNewProduct = false;
 
   const productFields = {
+    packaged_weight_grams: staged.packageWeightGrams,
     title: staged.title,
     short_description: staged.shortDescription || null,
     description: staged.description,
@@ -89,6 +90,15 @@ export async function commitAliExpressImport(
           product_id: productId,
           title: sku.properties,
           sku: `AE-${sku.aliexpressSkuId}`,
+          // Real option columns, so the storefront can render a proper variant picker
+          // instead of one opaque "Blue / M" string.
+          option1_name: sku.options?.[0]?.name ?? null,
+          option1_value: sku.options?.[0]?.value ?? null,
+          option2_name: sku.options?.[1]?.name ?? null,
+          option2_value: sku.options?.[1]?.value ?? null,
+          option3_name: sku.options?.[2]?.name ?? null,
+          option3_value: sku.options?.[2]?.value ?? null,
+          weight_grams: staged.packageWeightGrams,
           price: sku.retailPriceCents,
           compare_at: sku.compareAtCents,
           currency: staged.currencyCode,

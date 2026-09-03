@@ -3,9 +3,16 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { importProduct } from "@/lib/dropshipEngine";
 import { categorizeProduct } from "@/lib/import/categorize";
 
+export interface SkuOption {
+  name: string | null;
+  value: string;
+}
+
 export interface StagedSku {
   aliexpressSkuId: string;
   properties: string | null;
+  /** Variant options as name/value pairs, so the product gets real option1_name/option1_value. */
+  options?: SkuOption[];
   retailPriceCents: number;
   compareAtCents: number | null;
   supplierCostCents: number;
@@ -33,13 +40,16 @@ export interface StagedProduct {
   currencyCode: string;
   imageUrls: string[];
   skus: StagedSku[];
+  /** Shipping weight from AliExpress, in grams — written to the product so shipping can be rated. */
+  packageWeightGrams: number | null;
   confirmedProductId: string | null;
   createdAt: string;
 }
 
 const SELECT_COLUMNS =
   "id, aliexpress_product_id, source_url, status, error, title, short_description, description, seo_title, seo_desc, " +
-  "category_id, suggested_category_id, publish, product_type, brand, currency_code, image_urls, skus, confirmed_product_id, created_at";
+  "category_id, suggested_category_id, publish, product_type, brand, currency_code, image_urls, skus, " +
+  "package_weight_grams, confirmed_product_id, created_at";
 
 export function rowToStagedProduct(row: Record<string, unknown>): StagedProduct {
   return {
@@ -61,6 +71,7 @@ export function rowToStagedProduct(row: Record<string, unknown>): StagedProduct 
     currencyCode: (row.currency_code as string | null) ?? "USD",
     imageUrls: (row.image_urls as string[] | null) ?? [],
     skus: (row.skus as StagedSku[] | null) ?? [],
+    packageWeightGrams: (row.package_weight_grams as number | null) ?? null,
     confirmedProductId: (row.confirmed_product_id as string | null) ?? null,
     createdAt: row.created_at as string,
   };
@@ -134,6 +145,7 @@ export async function stageProduct(
     marginRate: sku.marginRate,
     stockOnHand: sku.stockOnHand,
     isActive: sku.stockOnHand > 0,
+    options: sku.options ?? [],
   }));
 
   return upsertStagedRow(supabase, tenantId, {
@@ -149,6 +161,7 @@ export async function stageProduct(
     currency_code: imported.currencyCode,
     image_urls: imported.imageUrls,
     skus,
+    package_weight_grams: imported.packageWeightGrams ?? null,
     raw: imported,
   });
 }
