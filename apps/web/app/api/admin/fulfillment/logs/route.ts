@@ -3,6 +3,10 @@ import { createServiceRoleSupabaseClient } from "@trend/db";
 import { resolveTenantId } from "@/lib/import/tenant";
 
 export const runtime = "nodejs";
+// Never prerender or cache an admin endpoint: Next will happily statically optimise a
+// route whose GET succeeds at build time, after which every other method on it returns a
+// bodiless 405 and the GET serves a stale build-time snapshot.
+export const dynamic = "force-dynamic";
 
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 200;

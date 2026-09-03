@@ -4,6 +4,10 @@ import { parseCsvChunk, zipCsvRow } from "@trend/core";
 import { upsertProductRows, markMissingProductsOutOfStock, type ProductCsvRecord, type ImportRowError } from "@/lib/import/product-import";
 
 export const runtime = "nodejs";
+// Never prerender or cache an admin endpoint: Next will happily statically optimise a
+// route whose GET succeeds at build time, after which every other method on it returns a
+// bodiless 405 and the GET serves a stale build-time snapshot.
+export const dynamic = "force-dynamic";
 // Generous ceiling in case a chunk lands on a slow moment — the design
 // doesn't *depend* on this being high (each chunk is small on purpose), but
 // there's no reason not to leave headroom.

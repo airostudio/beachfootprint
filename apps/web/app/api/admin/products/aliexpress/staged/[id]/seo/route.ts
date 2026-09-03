@@ -6,6 +6,10 @@ import { getStagedProduct } from "@/lib/import/staging";
 import { generateSeoCopy } from "@/lib/import/seoCopy";
 
 export const runtime = "nodejs";
+// Never prerender or cache an admin endpoint: Next will happily statically optimise a
+// route whose GET succeeds at build time, after which every other method on it returns a
+// bodiless 405 and the GET serves a stale build-time snapshot.
+export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 // The editor sends whatever is currently on screen, so generating works against unsaved
