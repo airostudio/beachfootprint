@@ -64,7 +64,8 @@ export async function GET() {
     },
     sellingCurrency,
     storeCurrency,
-    // Stated by the server so the admin screen can't imply a capability the store doesn't have.
-    checkoutImplemented: false,
+    // Checkout is wired to Stripe (see /api/checkout/session and /api/webhooks/stripe); whether it
+    // can actually take money now depends only on the credentials above.
+    checkoutImplemented: true,
   });
 }

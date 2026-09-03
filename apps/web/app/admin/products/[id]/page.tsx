@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 
@@ -62,6 +62,15 @@ const SHIPPING_CLASSES = ["STANDARD", "HEAVY", "OVERSIZED", "FREIGHT", "SPECIAL"
 const STOCK_POLICIES = ["IN_STOCK", "MADE_TO_ORDER", "PREORDER", "BACKORDER", "DISCONTINUED"];
 const TABS = ["Details", "Images", "Variants", "Specifications", "SEO"] as const;
 
+// Two-decimal currencies only: prices are integer cents throughout, so a zero-decimal
+// currency (JPY, KRW) would be charged 100x under that model.
+const CURRENCIES = ["USD", "AUD", "NZD", "GBP", "EUR", "CAD", "SGD"];
+
+function formatMoney(cents: number | null, currency: string): string {
+  if (cents === null || cents === undefined) return "—";
+  return new Intl.NumberFormat("en-US", { style: "currency", currency: currency || "USD" }).format(cents / 100);
+}
+
 function centsToDollars(cents: number | null): string {
   return cents === null || cents === undefined ? "" : (cents / 100).toFixed(2);
 }
@@ -85,6 +94,7 @@ export default function ProductEditorPage({ params }: { params: { id: string } }
   const [dirty, setDirty] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [savedAt, setSavedAt] = useState<string | null>(null);
+  const originalCurrencyRef = useRef<string | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -96,6 +106,7 @@ export default function ProductEditorPage({ params }: { params: { id: string } }
       if (!res.ok) throw new Error(data.error ?? "Could not load this product");
       setProduct(data.product);
       setVariants(data.variants ?? []);
+      originalCurrencyRef.current = data.variants?.[0]?.currency ?? "USD";
       setMedia(data.media ?? []);
       setSpecs(data.specs ?? []);
       setCategoryIds(data.categoryIds ?? []);
@@ -122,6 +133,12 @@ export default function ProductEditorPage({ params }: { params: { id: string } }
   }
   function updateVariant(id: string, patch: Partial<VariantRow>) {
     setVariants((vs) => vs.map((v) => (v.id === id ? { ...v, ...patch } : v)));
+    touch();
+  }
+
+  /** Currency is a property of the whole product in practice — a cart can only be charged in one. */
+  function setProductCurrency(currency: string) {
+    setVariants((vs) => vs.map((v) => ({ ...v, currency })));
     touch();
   }
 
@@ -164,6 +181,7 @@ export default function ProductEditorPage({ params }: { params: { id: string } }
             option3Value: v.option3_value,
             stockOnHand: v.stock_on_hand,
             isActive: v.is_active,
+            currency: v.currency,
           })),
         }),
       });
@@ -195,7 +213,17 @@ export default function ProductEditorPage({ params }: { params: { id: string } }
   if (!product) return <p className="text-sm text-red-600">{error ?? "Not found"}</p>;
 
   const currency = variants[0]?.currency ?? "USD";
+  const originalCurrency = originalCurrencyRef.current ?? currency;
+  const mixedCurrency = new Set(variants.map((v) => v.currency)).size > 1;
   const isDropshipped = variants.some((v) => v.supplier === "dropship-engine");
+
+  const prices = variants.map((v) => v.price);
+  const priceRange = prices.length > 0 ? { min: Math.min(...prices), max: Math.max(...prices) } : { min: 0, max: 0 };
+  const costs = variants.map((v) => v.cost).filter((c): c is number => typeof c === "number");
+  const costRange = costs.length > 0 ? { min: Math.min(...costs), max: Math.max(...costs) } : null;
+  // Margin on the cheapest variant, which is what the storefront advertises.
+  const marginPercent =
+    costRange && priceRange.min > 0 && costRange.min > 0 ? ((priceRange.min - costRange.min) / priceRange.min) * 100 : null;
 
   return (
     <div className="max-w-4xl">
@@ -420,7 +448,66 @@ export default function ProductEditorPage({ params }: { params: { id: string } }
       )}
 
       {tab === "Variants" && (
-        <section className="overflow-x-auto">
+        <section>
+          <div className="border border-stone-200 p-4 mb-4">
+            <div className="flex flex-wrap items-end gap-6">
+              <label className="text-sm">
+                <span className="block text-xs text-stone-500 mb-1">Currency</span>
+                <select
+                  value={currency}
+                  onChange={(e) => setProductCurrency(e.target.value)}
+                  className="border border-stone-300 px-3 py-2 text-sm"
+                >
+                  {CURRENCIES.map((c) => (
+                    <option key={c} value={c}>
+                      {c}
+                    </option>
+                  ))}
+                  {/* Keep an existing non-listed currency selectable rather than silently switching it. */}
+                  {!CURRENCIES.includes(currency) && <option value={currency}>{currency}</option>}
+                </select>
+              </label>
+              <div className="text-sm">
+                <span className="block text-xs text-stone-500 mb-1">Price range</span>
+                <span className="font-medium">
+                  {priceRange.min === priceRange.max
+                    ? formatMoney(priceRange.min, currency)
+                    : `${formatMoney(priceRange.min, currency)} – ${formatMoney(priceRange.max, currency)}`}
+                </span>
+              </div>
+              <div className="text-sm">
+                <span className="block text-xs text-stone-500 mb-1">Cost range</span>
+                <span className="text-stone-600">
+                  {costRange === null
+                    ? "—"
+                    : costRange.min === costRange.max
+                      ? formatMoney(costRange.min, currency)
+                      : `${formatMoney(costRange.min, currency)} – ${formatMoney(costRange.max, currency)}`}
+                </span>
+              </div>
+              <div className="text-sm">
+                <span className="block text-xs text-stone-500 mb-1">Margin</span>
+                <span className={marginPercent === null ? "text-stone-400" : marginPercent < 0 ? "text-red-600" : "text-green-700"}>
+                  {marginPercent === null ? "—" : `${marginPercent.toFixed(0)}%`}
+                </span>
+              </div>
+            </div>
+            {currency !== originalCurrency && (
+              <p className="text-xs text-amber-700 mt-3">
+                Changing the currency <span className="font-medium">relabels</span> these prices — it does not convert
+                them. {formatMoney(priceRange.min, originalCurrency)} becomes{" "}
+                {formatMoney(priceRange.min, currency)}. Adjust the amounts below if you meant to re-price.
+              </p>
+            )}
+            {mixedCurrency && (
+              <p className="text-xs text-red-600 mt-3">
+                This product&rsquo;s variants are priced in more than one currency. A cart can only be charged in one,
+                so checkout will refuse them — pick a currency above to bring them into line.
+              </p>
+            )}
+          </div>
+
+          <div className="overflow-x-auto">
           <table className="w-full text-xs">
             <thead>
               <tr className="text-left text-stone-500 border-b border-stone-200">
@@ -503,9 +590,10 @@ export default function ProductEditorPage({ params }: { params: { id: string } }
             </tbody>
           </table>
           <p className="text-xs text-stone-500 mt-3">
-            Prices are in {currency}. Option names label the storefront&rsquo;s variant picker — AliExpress often omits
-            them, so they&rsquo;re inferred from the values on import and can be corrected here.
+            Option names label the storefront&rsquo;s variant picker — AliExpress often omits them, so they&rsquo;re
+            inferred from the values on import and can be corrected here.
           </p>
+          </div>
         </section>
       )}
 
