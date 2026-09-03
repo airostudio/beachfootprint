@@ -47,7 +47,7 @@ interface ConfirmOutcome {
 }
 
 function formatMoney(cents: number, currency: string): string {
-  return new Intl.NumberFormat("en-AU", { style: "currency", currency: currency || "USD" }).format(cents / 100);
+  return new Intl.NumberFormat("en-US", { style: "currency", currency: currency || "USD" }).format(cents / 100);
 }
 
 function priceRange(skus: StagedSku[], currency: string): string {

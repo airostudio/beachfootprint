@@ -30,10 +30,12 @@ interface StoreSettings {
   };
 }
 
-const CURRENCIES = ["AUD", "USD", "NZD", "GBP", "EUR", "CAD", "SGD", "JPY"];
+// Two-decimal currencies only. Prices are held as integer cents throughout, and a zero-decimal
+// currency (JPY, KRW) would be charged 100x under that model — so it is not offered here.
+const CURRENCIES = ["USD", "AUD", "NZD", "GBP", "EUR", "CAD", "SGD"];
 const SHIP_TO_COUNTRIES: Array<[string, string]> = [
-  ["AU", "Australia"],
   ["US", "United States"],
+  ["AU", "Australia"],
   ["NZ", "New Zealand"],
   ["GB", "United Kingdom"],
   ["CA", "Canada"],
@@ -89,7 +91,7 @@ export default function DropshipSettingsPage() {
 
   function formatMoney(cents: number): string {
     const currency = settings?.import.targetCurrency ?? "USD";
-    return new Intl.NumberFormat("en-AU", { style: "currency", currency }).format(cents / 100);
+    return new Intl.NumberFormat("en-US", { style: "currency", currency }).format(cents / 100);
   }
 
   function formatExampleCost(): string {

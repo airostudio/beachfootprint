@@ -127,7 +127,18 @@ export async function resolveCart(
     });
   }
 
+  // The cart's currency is the first line's. Anything priced differently is refused rather than
+  // added in: summing mixed currencies and charging the total under one of them would take the
+  // wrong amount of money. A catalogue should be single-currency, but an old import or a changed
+  // setting can leave a stray variant behind, and that must not reach Stripe.
   const currency = lines[0]?.currency ?? "USD";
+  for (const line of lines) {
+    if (line.currency !== currency) {
+      line.purchasable = false;
+      line.unavailableReason = `Priced in ${line.currency}, but this cart is in ${currency}`;
+    }
+  }
+
   const subtotalCents = lines.filter((l) => l.purchasable).reduce((sum, l) => sum + l.lineTotalCents, 0);
   const shippingCents = subtotalCents === 0 || subtotalCents >= FREE_SHIPPING_THRESHOLD_CENTS ? 0 : SHIPPING_FLAT_CENTS;
 

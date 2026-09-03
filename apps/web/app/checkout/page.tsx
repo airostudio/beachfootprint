@@ -18,7 +18,7 @@ const checkoutSchema = z.object({
   city: z.string().min(1, "Enter a city"),
   region: z.string().optional(),
   postalCode: z.string().min(1, "Enter a postal code"),
-  country: z.string().length(2, "Use a 2-letter country code, e.g. AU"),
+  country: z.string().length(2, "Use a 2-letter country code, e.g. US"),
 });
 
 type CheckoutForm = z.infer<typeof checkoutSchema>;
@@ -56,7 +56,7 @@ function CheckoutFlow() {
     handleSubmit,
     trigger,
     formState: { errors },
-  } = useForm<CheckoutForm>({ resolver: zodResolver(checkoutSchema), mode: "onBlur", defaultValues: { country: "AU" } });
+  } = useForm<CheckoutForm>({ resolver: zodResolver(checkoutSchema), mode: "onBlur", defaultValues: { country: "US" } });
 
   const price = useCallback(async () => {
     if (lines.length === 0) return;
@@ -157,7 +157,7 @@ function CheckoutFlow() {
               { name: "city" as const, label: "City" },
               { name: "region" as const, label: "State / Region (optional)" },
               { name: "postalCode" as const, label: "Postal code" },
-              { name: "country" as const, label: "Country (2-letter code, e.g. AU)" },
+              { name: "country" as const, label: "Country (2-letter code, e.g. US)" },
             ].map((f) => (
               <div key={f.name}>
                 <label className="text-sm block mb-1">{f.label}</label>
