@@ -43,6 +43,9 @@ const patchSchema = z.object({
         option3Value: z.string().nullable(),
         stockOnHand: z.number().int().min(0),
         isActive: z.boolean(),
+        // ISO 4217. Changing this RELABELS the price, it does not convert it — there is no FX
+        // rate here, and silently converting money would be worse than not offering it.
+        currency: z.string().regex(/^[A-Z]{3}$/, "Use a 3-letter currency code").optional(),
       }),
     )
     .optional(),
@@ -146,6 +149,7 @@ export async function PATCH(request: Request, { params }: { params: { id: string
           price: v.priceCents,
           compare_at: v.compareAtCents,
           sku: v.sku,
+          ...(v.currency ? { currency: v.currency } : {}),
           option1_name: v.option1Name,
           option1_value: v.option1Value,
           option2_name: v.option2Name,

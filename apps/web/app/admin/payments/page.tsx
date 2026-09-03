@@ -32,16 +32,51 @@ function StatusRow({ label, ok, envVar, detail }: { label: string; ok: boolean; 
   );
 }
 
+// Two-decimal currencies only — prices are integer cents throughout, so a zero-decimal
+// currency (JPY, KRW) would be charged 100x under that model.
+const CURRENCIES = ["USD", "AUD", "NZD", "GBP", "EUR", "CAD", "SGD"];
+
 export default function PaymentsSettingsPage() {
   const [status, setStatus] = useState<PaymentsStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [currency, setCurrency] = useState<string>("");
+  const [savingCurrency, setSavingCurrency] = useState(false);
+  const [currencySavedAt, setCurrencySavedAt] = useState<string | null>(null);
 
   useEffect(() => {
     fetch("/api/admin/payments")
       .then((res) => res.json())
-      .then((data) => (data.error ? Promise.reject(new Error(data.error)) : setStatus(data)))
+      .then((data) => {
+        if (data.error) return Promise.reject(new Error(data.error));
+        setStatus(data);
+        setCurrency(data.sellingCurrency ?? "USD");
+      })
       .catch((err) => setError(err instanceof Error ? err.message : "Could not load payment settings"));
   }, []);
+
+  /** Saves through the same engine settings endpoint the dropship settings page uses. */
+  async function saveCurrency(next: string) {
+    setCurrency(next);
+    setSavingCurrency(true);
+    setError(null);
+    try {
+      const current = await fetch("/api/admin/settings").then((r) => r.json());
+      if (current.error) throw new Error(current.error);
+      const res = await fetch("/api/admin/settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...current.settings, import: { ...current.settings.import, targetCurrency: next } }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(typeof data.error === "string" ? data.error : "Could not save the currency");
+      setStatus((prev) => (prev ? { ...prev, sellingCurrency: next } : prev));
+      setCurrencySavedAt(new Date().toLocaleTimeString());
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not save the currency");
+    } finally {
+      setSavingCurrency(false);
+    }
+  }
 
   if (error) return <p className="text-sm text-red-600">{error}</p>;
   if (!status) return <p className="text-sm text-stone-500">Checking payment configuration…</p>;
@@ -59,13 +94,24 @@ export default function PaymentsSettingsPage() {
         screen reports what is configured; set the values in Vercel → Settings → Environment Variables.
       </p>
 
-      {!status.checkoutImplemented && (
+      {!allSet ? (
         <div className="border border-amber-600 bg-amber-50 px-4 py-3 mb-6 text-sm">
-          <p className="font-medium mb-1">Checkout does not take payments yet</p>
+          <p className="font-medium mb-1">Checkout can&rsquo;t take payments yet</p>
           <p className="text-xs text-stone-700">
-            The checkout page is currently a front-end flow only — it collects details and shows a review step, but no
-            payment intent is created and no card is ever charged. Setting the keys below is necessary for taking money,
-            but not sufficient on its own: the checkout still needs to be wired to Stripe before the store can go live.
+            Checkout is wired to Stripe, but the credentials below are incomplete, so a customer reaching payment gets a
+            &ldquo;payments are not configured&rdquo; error. Set the missing values in Vercel and redeploy.
+          </p>
+        </div>
+      ) : (
+        <div className="border border-green-700 bg-green-50 px-4 py-3 mb-6 text-sm">
+          <p className="font-medium mb-1">Checkout is ready to take payments</p>
+          <p className="text-xs text-stone-700">
+            An order is created when a customer starts checkout and only becomes <span className="font-medium">Paid</span>{" "}
+            once Stripe&rsquo;s webhook confirms the money moved. Watch them in{" "}
+            <Link href="/admin/orders" className="underline">
+              Orders
+            </Link>
+            .
           </p>
         </div>
       )}
@@ -117,17 +163,36 @@ export default function PaymentsSettingsPage() {
 
       <section className="card p-6">
         <h2 className="font-serif text-xl mb-4">Currency</h2>
-        <div className="text-sm space-y-2">
-          <p>
-            Selling currency:{" "}
-            <span className="font-medium">{status.sellingCurrency ?? "not set"}</span>{" "}
-            <Link href="/admin/aliexpress/settings" className="text-xs underline">
-              change
-            </Link>
+        <div className="flex flex-wrap items-end gap-6 mb-3">
+          <label className="text-sm">
+            <span className="block text-xs text-stone-500 mb-1">Sell in currency</span>
+            <select
+              value={currency}
+              onChange={(e) => saveCurrency(e.target.value)}
+              disabled={savingCurrency}
+              className="border border-stone-300 px-3 py-2 text-sm"
+            >
+              {CURRENCIES.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+              {currency && !CURRENCIES.includes(currency) && <option value={currency}>{currency}</option>}
+            </select>
+          </label>
+          <p className="text-xs text-stone-500 pb-2">
+            {savingCurrency ? "Saving…" : currencySavedAt ? `Saved ${currencySavedAt}` : "Applied to products imported from now on."}
           </p>
+        </div>
+        <div className="text-sm space-y-2">
           {status.storeCurrency && (
             <p className="text-stone-600">
-              Existing product prices are stored in <span className="font-medium">{status.storeCurrency}</span>.
+              Existing product prices are stored in <span className="font-medium">{status.storeCurrency}</span>. Change
+              an individual product&rsquo;s currency in its{" "}
+              <Link href="/admin/products" className="underline">
+                editor
+              </Link>
+              .
             </p>
           )}
         </div>
@@ -135,10 +200,11 @@ export default function PaymentsSettingsPage() {
           Charge customers in the same currency your products are priced in. Changing the selling currency affects
           products imported from then on — it does not re-price products already in the catalogue.
         </p>
-        {status.sellingCurrency && status.storeCurrency && status.sellingCurrency !== status.storeCurrency && (
+        {currency && status.storeCurrency && currency !== status.storeCurrency && (
           <p className="text-sm text-amber-700 mt-3">
-            Your import currency ({status.sellingCurrency}) differs from the currency existing products are priced in (
-            {status.storeCurrency}). New imports will be priced in {status.sellingCurrency}, leaving the catalogue mixed.
+            Your selling currency ({currency}) differs from the currency existing products are priced in (
+            {status.storeCurrency}). New imports will be priced in {currency}, leaving the catalogue mixed — and a cart
+            can only be charged in one currency, so checkout refuses baskets that mix them.
           </p>
         )}
       </section>
