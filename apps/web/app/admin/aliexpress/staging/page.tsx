@@ -107,7 +107,10 @@ export default function AliExpressStagingPage() {
   }
 
   async function confirmSelected() {
-    const ids = confirmable.filter((s) => selected.has(s.id)).map((s) => s.id);
+    await confirmIds(confirmable.filter((s) => selected.has(s.id)).map((s) => s.id));
+  }
+
+  async function confirmIds(ids: string[]) {
     if (ids.length === 0) return;
     setBusy(true);
     setOutcomes(null);
@@ -212,8 +215,11 @@ export default function AliExpressStagingPage() {
               Select all ({confirmable.length})
             </label>
             <button className="btn-primary" disabled={busy || selected.size === 0} onClick={confirmSelected}>
-              {busy ? "Confirming…" : `Confirm ${selected.size || ""} selected`.replace("  ", " ")}
+              {busy ? "Confirming…" : selected.size === 0 ? "Confirm selected" : `Confirm ${selected.size} selected`}
             </button>
+            {selected.size === 0 && !busy && (
+              <span className="text-xs text-stone-400">tick products above, or use Confirm on a card</span>
+            )}
             <span className="text-xs text-stone-500 ml-auto">
               {staged.length} staged{staged.some((s) => s.status === "failed") && " · some failed to fetch"}
             </span>
@@ -286,9 +292,14 @@ export default function AliExpressStagingPage() {
 
                   <div className="flex gap-3 items-center mt-3 pt-3 border-t border-stone-100">
                     {item.status === "ready" && (
-                      <Link href={`/admin/aliexpress/staging/${item.id}`} className="text-xs underline">
-                        Open &amp; edit
-                      </Link>
+                      <>
+                        <button className="btn-primary text-xs py-1 px-3" disabled={busy} onClick={() => confirmIds([item.id])}>
+                          Confirm
+                        </button>
+                        <Link href={`/admin/aliexpress/staging/${item.id}`} className="text-xs underline">
+                          Open &amp; edit
+                        </Link>
+                      </>
                     )}
                     <button className="text-xs underline text-stone-500 ml-auto" disabled={busy} onClick={() => remove(item.id)}>
                       Remove

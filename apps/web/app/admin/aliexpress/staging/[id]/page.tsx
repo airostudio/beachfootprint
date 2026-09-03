@@ -44,6 +44,19 @@ interface CategoryOption {
 
 const PRODUCT_TYPES = ["STANDARD", "ACCESSORY", "CARE_PRODUCT", "BUNDLE", "GIFT_CARD"];
 
+/** Zod returns a field-error object, not a string — surface something an admin can act on. */
+function describeApiError(error: unknown, fallback: string): string {
+  if (typeof error === "string") return error;
+  const fieldErrors = (error as { fieldErrors?: Record<string, string[]> })?.fieldErrors;
+  if (fieldErrors) {
+    const parts = Object.entries(fieldErrors)
+      .map(([field, messages]) => `${field}: ${(messages ?? []).join(", ")}`)
+      .filter(Boolean);
+    if (parts.length > 0) return parts.join(" · ");
+  }
+  return fallback;
+}
+
 function centsToDollars(cents: number | null): string {
   return cents === null ? "" : (cents / 100).toFixed(2);
 }
@@ -136,7 +149,7 @@ export default function StagedProductEditor({ params }: { params: { id: string }
         }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(typeof data.error === "string" ? data.error : "Could not save your changes");
+      if (!res.ok) throw new Error(describeApiError(data.error, "Could not save your changes"));
       setProduct(data);
       setDirty(false);
       setSavedAt(new Date().toLocaleTimeString());
@@ -211,6 +224,12 @@ export default function StagedProductEditor({ params }: { params: { id: string }
       </div>
 
       {error && <p className="text-sm text-red-600 mb-6">{error}</p>}
+
+      <div className="border border-stone-300 bg-stone-50 px-4 py-3 mb-6 text-xs text-stone-600">
+        This product is <span className="font-medium">not in the store yet</span>. Saving keeps your edits here in
+        staging — it&rsquo;s <span className="font-medium">Confirm &amp; add to store</span> that actually creates the
+        product.
+      </div>
 
       <section className="card p-6 mb-6">
         <h2 className="text-sm font-medium mb-4">Images</h2>
@@ -343,15 +362,16 @@ export default function StagedProductEditor({ params }: { params: { id: string }
             />
           </div>
           <div>
-            <label className="block text-xs text-stone-600 mb-1">Status when added</label>
+            <label className="block text-xs text-stone-600 mb-1">Status once you confirm</label>
             <select
               value={product.publish ? "PUBLISHED" : "DRAFT"}
               onChange={(e) => update({ publish: e.target.value === "PUBLISHED" })}
               className="w-full border border-stone-300 px-3 py-2 text-sm"
             >
               <option value="DRAFT">Draft — review before it goes live</option>
-              <option value="PUBLISHED">Published — live immediately</option>
+              <option value="PUBLISHED">Published — live as soon as it&rsquo;s confirmed</option>
             </select>
+            <p className="text-[10px] text-stone-400 mt-1">Applied when you confirm, not when you save.</p>
           </div>
         </div>
       </section>
