@@ -41,7 +41,21 @@ export interface ProductSummary {
   isIndexable?: boolean;
 }
 
+export interface ProductVariantSummary {
+  id: string;
+  title: string | null;
+  sku: string | null;
+  priceCents: number;
+  compareAtCents?: number;
+  currency: string;
+  /** e.g. [["Color", "Blue"], ["Size", "M"]] — only the options this variant actually defines. */
+  options: Array<{ name: string; value: string }>;
+  inStock: boolean;
+}
+
 export interface ProductDetail extends ProductSummary {
+  /** Buyable variants, cheapest first. A product always has at least one. */
+  variants: ProductVariantSummary[];
   gallery: { url: string; alt: string }[];
   description: string;
   specGroups: ProductSpecGroup[];

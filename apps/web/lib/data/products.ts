@@ -1,6 +1,6 @@
 import "server-only";
 import { db, getTenantId } from "./client";
-import type { ProductDetail, ProductSpecGroup, ProductSummary, ProductType } from "../types";
+import type { ProductDetail, ProductSpecGroup, ProductSummary, ProductType, ProductVariantSummary } from "../types";
 
 const PRODUCT_TYPE_MAP: Record<string, ProductType> = {
   STANDARD: "standard",
@@ -239,12 +239,58 @@ export async function getProductBySlug(slug: string): Promise<ProductDetail | un
   if (!data) return undefined;
   const row = data as ProductRow;
 
-  const [hydrated, specsRes, gallery, linksRes] = await Promise.all([
+  const [hydrated, specsRes, gallery, linksRes, variantsRes] = await Promise.all([
     hydrate([row.id]),
     supabase.from("product_specs").select("group, label, value, position").eq("product_id", row.id).order("position"),
     supabase.from("product_media").select("url, alt, position").eq("product_id", row.id).order("position"),
     supabase.from("compatibility_links").select("to_product_id, relation_type").eq("from_product_id", row.id),
+    supabase
+      .from("product_variants")
+      .select("id, title, sku, price, compare_at, currency, is_active, option1_name, option1_value, option2_name, option2_value, option3_name, option3_value")
+      .eq("product_id", row.id)
+      .order("price"),
   ]);
+
+  interface VariantRow {
+    id: string;
+    title: string | null;
+    sku: string | null;
+    price: number;
+    compare_at: number | null;
+    currency: string;
+    is_active: boolean;
+    option1_name: string | null;
+    option1_value: string | null;
+    option2_name: string | null;
+    option2_value: string | null;
+    option3_name: string | null;
+    option3_value: string | null;
+  }
+  const variantRows = (variantsRes.data ?? []) as VariantRow[];
+  const variantIds = variantRows.map((v) => v.id);
+  const { data: stockRows } = variantIds.length
+    ? await supabase.from("inventory_items").select("variant_id, stock_on_hand").in("variant_id", variantIds)
+    : { data: [] as { variant_id: string; stock_on_hand: number }[] };
+  const stockByVariant = new Map(
+    ((stockRows ?? []) as { variant_id: string; stock_on_hand: number }[]).map((r) => [r.variant_id, r.stock_on_hand]),
+  );
+
+  const variants: ProductVariantSummary[] = variantRows.map((v) => ({
+    id: v.id,
+    title: v.title,
+    sku: v.sku,
+    priceCents: v.price,
+    compareAtCents: v.compare_at ?? undefined,
+    currency: v.currency,
+    options: [
+      [v.option1_name, v.option1_value],
+      [v.option2_name, v.option2_value],
+      [v.option3_name, v.option3_value],
+    ]
+      .filter(([, value]) => Boolean(value))
+      .map(([name, value]) => ({ name: name ?? "Option", value: value as string })),
+    inStock: v.is_active && (stockByVariant.get(v.id) ?? 0) > 0,
+  }));
 
   const summary = toSummary(row, hydrated);
 
@@ -292,6 +338,7 @@ export async function getProductBySlug(slug: string): Promise<ProductDetail | un
 
   return {
     ...summary,
+    variants,
     gallery: galleryRows.length > 0 ? galleryRows.map((g) => ({ url: g.url, alt: g.alt ?? summary.title })) : [{ url: summary.imageUrl, alt: summary.imageAlt }],
     description: row.description ?? summary.shortDescription,
     specGroups,
