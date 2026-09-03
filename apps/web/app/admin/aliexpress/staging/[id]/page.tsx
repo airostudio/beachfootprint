@@ -44,6 +44,40 @@ interface CategoryOption {
 
 const PRODUCT_TYPES = ["STANDARD", "ACCESSORY", "CARE_PRODUCT", "BUNDLE", "GIFT_CARD"];
 
+// Google cuts a title around 60 characters and a meta description around 160; the lower
+// bounds are where a snippet stops looking thin. Kept in sync with lib/import/seoCopy.ts.
+const SEO_TITLE_MAX = 60;
+const SEO_TITLE_TARGET_MIN = 50;
+const SEO_DESC_MAX = 160;
+const SEO_DESC_TARGET_MIN = 140;
+
+/** Trim to a hard limit on a word boundary, so a snippet never ends mid-word. */
+function truncateAtWord(value: string, max: number): string {
+  const clean = value.replace(/\s+/g, " ").trim();
+  if (clean.length <= max) return clean;
+  const cut = clean.slice(0, max);
+  const lastSpace = cut.lastIndexOf(" ");
+  return (lastSpace > max * 0.6 ? cut.slice(0, lastSpace) : cut).replace(/[\s,;:.\-–—]+$/, "");
+}
+
+/** Strips the markdown-ish headings the rewriter emits, so copying gives prose, not "## Details". */
+function toPlainProse(markdown: string): string {
+  return markdown
+    .split("\n")
+    .filter((line) => !/^\s*#{1,6}\s/.test(line) && !/^\s*[-*]\s/.test(line))
+    .join(" ")
+    .replace(/[*_`>#]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function counterClass(length: number, min: number, max: number): string {
+  if (length === 0) return "text-stone-400";
+  if (length > max) return "text-red-600";
+  if (length < min) return "text-amber-600";
+  return "text-green-700";
+}
+
 /** Zod returns a field-error object, not a string — surface something an admin can act on. */
 function describeApiError(error: unknown, fallback: string): string {
   if (typeof error === "string") return error;
@@ -77,6 +111,7 @@ export default function StagedProductEditor({ params }: { params: { id: string }
   const [dirty, setDirty] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [savedAt, setSavedAt] = useState<string | null>(null);
+  const [generatingSeo, setGeneratingSeo] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -124,6 +159,42 @@ export default function StagedProductEditor({ params }: { params: { id: string }
     });
     setDirty(true);
     setSavedAt(null);
+  }
+
+  /** Writes both SEO fields with AI, from whatever is currently on screen (no save required first). */
+  async function generateSeo() {
+    if (!product) return;
+    setGeneratingSeo(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/admin/products/aliexpress/staged/${product.id}/seo`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: product.title,
+          shortDescription: product.shortDescription,
+          description: product.description,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(describeApiError(data.error, "Could not generate SEO copy"));
+      update({ seoTitle: data.seoTitle, seoDesc: data.seoDesc });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not generate SEO copy");
+    } finally {
+      setGeneratingSeo(false);
+    }
+  }
+
+  function copyTitleToSeo() {
+    if (!product) return;
+    update({ seoTitle: truncateAtWord(product.title, SEO_TITLE_MAX) });
+  }
+
+  function copyDescriptionToSeo() {
+    if (!product) return;
+    const source = product.shortDescription?.trim() ? product.shortDescription : toPlainProse(product.description);
+    update({ seoDesc: truncateAtWord(toPlainProse(source), SEO_DESC_MAX) });
   }
 
   async function save(): Promise<boolean> {
@@ -187,7 +258,7 @@ export default function StagedProductEditor({ params }: { params: { id: string }
   if (loading) return <p className="text-sm text-stone-500">Loading…</p>;
   if (!product) return <p className="text-sm text-red-600">{error ?? "Not found"}</p>;
 
-  const busy = saving || confirming;
+  const busy = saving || confirming || generatingSeo;
 
   return (
     <div className="max-w-4xl">
@@ -293,23 +364,54 @@ export default function StagedProductEditor({ params }: { params: { id: string }
           className="w-full border border-stone-300 px-3 py-2 text-sm font-mono mb-4"
         />
 
-        <label className="block text-xs text-stone-600 mb-1">SEO title</label>
-        <input
-          type="text"
-          value={product.seoTitle ?? ""}
-          onChange={(e) => update({ seoTitle: e.target.value || null })}
-          placeholder="Defaults to the product title"
-          className="w-full border border-stone-300 px-3 py-2 text-sm mb-4"
-        />
+        <div className="border-t border-stone-200 pt-4 mt-2">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-sm font-medium">Search engine snippet</h3>
+            <button className="btn-secondary text-xs py-1 px-3" disabled={busy} onClick={generateSeo}>
+              {generatingSeo ? "Writing…" : "Write both with AI"}
+            </button>
+          </div>
 
-        <label className="block text-xs text-stone-600 mb-1">SEO description</label>
-        <textarea
-          value={product.seoDesc ?? ""}
-          onChange={(e) => update({ seoDesc: e.target.value || null })}
-          rows={2}
-          placeholder="Defaults to the short description"
-          className="w-full border border-stone-300 px-3 py-2 text-sm"
-        />
+          <div className="flex items-center justify-between mb-1">
+            <label className="block text-xs text-stone-600">SEO title</label>
+            <div className="flex items-center gap-2">
+              <button className="text-[10px] underline text-stone-500" disabled={busy} onClick={copyTitleToSeo}>
+                Copy from title
+              </button>
+              <span className={`text-[10px] ${counterClass((product.seoTitle ?? "").length, SEO_TITLE_TARGET_MIN, SEO_TITLE_MAX)}`}>
+                {(product.seoTitle ?? "").length}/{SEO_TITLE_MAX}
+              </span>
+            </div>
+          </div>
+          <input
+            type="text"
+            value={product.seoTitle ?? ""}
+            onChange={(e) => update({ seoTitle: e.target.value || null })}
+            placeholder="Defaults to the product title"
+            className="w-full border border-stone-300 px-3 py-2 text-sm mb-1"
+          />
+          <p className="text-[10px] text-stone-400 mb-4">Best between {SEO_TITLE_TARGET_MIN} and {SEO_TITLE_MAX} characters — longer gets cut off in search results.</p>
+
+          <div className="flex items-center justify-between mb-1">
+            <label className="block text-xs text-stone-600">SEO description</label>
+            <div className="flex items-center gap-2">
+              <button className="text-[10px] underline text-stone-500" disabled={busy} onClick={copyDescriptionToSeo}>
+                Copy from description
+              </button>
+              <span className={`text-[10px] ${counterClass((product.seoDesc ?? "").length, SEO_DESC_TARGET_MIN, SEO_DESC_MAX)}`}>
+                {(product.seoDesc ?? "").length}/{SEO_DESC_MAX}
+              </span>
+            </div>
+          </div>
+          <textarea
+            value={product.seoDesc ?? ""}
+            onChange={(e) => update({ seoDesc: e.target.value || null })}
+            rows={3}
+            placeholder="Defaults to the short description"
+            className="w-full border border-stone-300 px-3 py-2 text-sm mb-1"
+          />
+          <p className="text-[10px] text-stone-400">Best between {SEO_DESC_TARGET_MIN} and {SEO_DESC_MAX} characters. Copying trims on a word boundary so nothing ends mid-word.</p>
+        </div>
       </section>
 
       <section className="card p-6 mb-6">
