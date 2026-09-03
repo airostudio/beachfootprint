@@ -2,9 +2,16 @@ import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { importProduct } from "@/lib/dropshipEngine";
 import { categorizeProduct } from "@/lib/import/categorize";
+import { nameOptions } from "@/lib/import/optionNames";
 
 export interface SkuOption {
   name: string | null;
+  value: string;
+  imageUrl?: string | null;
+}
+
+export interface ProductAttribute {
+  name: string;
   value: string;
 }
 
@@ -42,6 +49,8 @@ export interface StagedProduct {
   skus: StagedSku[];
   /** Shipping weight from AliExpress, in grams — written to the product so shipping can be rated. */
   packageWeightGrams: number | null;
+  /** The supplier's spec table, editable before it becomes product_specs rows. */
+  attributes: ProductAttribute[];
   confirmedProductId: string | null;
   createdAt: string;
 }
@@ -49,7 +58,7 @@ export interface StagedProduct {
 const SELECT_COLUMNS =
   "id, aliexpress_product_id, source_url, status, error, title, short_description, description, seo_title, seo_desc, " +
   "category_id, suggested_category_id, publish, product_type, brand, currency_code, image_urls, skus, " +
-  "package_weight_grams, confirmed_product_id, created_at";
+  "package_weight_grams, attributes, confirmed_product_id, created_at";
 
 export function rowToStagedProduct(row: Record<string, unknown>): StagedProduct {
   return {
@@ -72,6 +81,7 @@ export function rowToStagedProduct(row: Record<string, unknown>): StagedProduct 
     imageUrls: (row.image_urls as string[] | null) ?? [],
     skus: (row.skus as StagedSku[] | null) ?? [],
     packageWeightGrams: (row.package_weight_grams as number | null) ?? null,
+    attributes: (row.attributes as ProductAttribute[] | null) ?? [],
     confirmedProductId: (row.confirmed_product_id as string | null) ?? null,
     createdAt: row.created_at as string,
   };
@@ -136,7 +146,9 @@ export async function stageProduct(
     description: imported.description,
   });
 
-  const skus: StagedSku[] = imported.skus.map((sku) => ({
+  // AliExpress names options inconsistently; infer a name for any position it left blank so the
+  // storefront picker has a real label instead of "Option 1".
+  const skus: StagedSku[] = nameOptions(imported.skus.map((sku) => ({
     aliexpressSkuId: sku.aliexpressSkuId,
     properties: sku.properties,
     retailPriceCents: sku.retailPriceCents,
@@ -146,7 +158,7 @@ export async function stageProduct(
     stockOnHand: sku.stockOnHand,
     isActive: sku.stockOnHand > 0,
     options: sku.options ?? [],
-  }));
+  })));
 
   return upsertStagedRow(supabase, tenantId, {
     aliexpress_product_id: imported.aliexpressProductId,
@@ -162,6 +174,7 @@ export async function stageProduct(
     image_urls: imported.imageUrls,
     skus,
     package_weight_grams: imported.packageWeightGrams ?? null,
+    attributes: imported.attributes ?? [],
     raw: imported,
   });
 }

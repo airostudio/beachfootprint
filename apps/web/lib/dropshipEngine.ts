@@ -23,6 +23,12 @@ export interface EngineAddress {
 export interface SkuOption {
   name: string | null;
   value: string;
+  imageUrl?: string | null;
+}
+
+export interface ProductAttribute {
+  name: string;
+  value: string;
 }
 
 export interface ImportedSku {
@@ -46,6 +52,8 @@ export interface ImportProductResult {
   packageWeightGrams?: number | null;
   productUnit?: string | null;
   aliexpressCategoryId?: number | null;
+  /** The supplier's spec table (Material, Style…), written to product_specs on confirm. */
+  attributes?: ProductAttribute[];
 }
 
 export interface FulfillOrderResult {

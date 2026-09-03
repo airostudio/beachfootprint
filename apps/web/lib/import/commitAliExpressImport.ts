@@ -144,6 +144,22 @@ export async function commitAliExpressImport(
     if (mediaError) throw new Error(`Product saved but its images could not be attached: ${mediaError.message}`);
   }
 
+  // Specifications, synced like media: replaced on every commit so re-confirming picks up
+  // supplier changes and edits without duplicating rows.
+  if (staged.attributes.length > 0) {
+    await supabase.from("product_specs").delete().eq("product_id", productId);
+    const { error: specsError } = await supabase.from("product_specs").insert(
+      staged.attributes.map((attr, position) => ({
+        product_id: productId,
+        group: "Specifications",
+        label: attr.name,
+        value: attr.value,
+        position,
+      })),
+    );
+    if (specsError) throw new Error(`Product saved but its specifications could not be attached: ${specsError.message}`);
+  }
+
   if (staged.categoryId) {
     await supabase
       .from("product_categories")

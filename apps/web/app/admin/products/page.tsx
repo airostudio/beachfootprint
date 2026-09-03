@@ -105,13 +105,19 @@ export default async function AdminProductsPage() {
         <tbody>
           {products.map((p) => (
             <tr key={p.id} className="border-b border-stone-100">
-              <td className="py-2">{p.title}</td>
+              <td className="py-2">
+                <Link href={`/admin/products/${p.id}`} className="hover:underline">
+                  {p.title}
+                </Link>
+              </td>
               <td className="py-2 text-stone-500">{p.productType}</td>
               <td className="py-2">{p.priceCents > 0 ? formatMoney(p.priceCents, p.currency) : <span className="text-red-600">no price</span>}</td>
               <td className={`py-2 ${p.currency === storeCurrency ? "text-stone-500" : "text-red-600 font-medium"}`}>{p.currency}</td>
               <td className="py-2 text-stone-500">{p.status}</td>
               <td className="py-2 flex gap-3 items-center">
-                <button className="text-xs underline">Edit</button>
+                <Link href={`/admin/products/${p.id}`} className="text-xs underline">
+                  Edit
+                </Link>
                 {p.status !== "PUBLISHED" && (
                   <form action={publishProduct.bind(null, p.id)}>
                     <button type="submit" className="text-xs underline">
