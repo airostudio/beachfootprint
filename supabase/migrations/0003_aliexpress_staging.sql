@@ -36,7 +36,12 @@ create table if not exists aliexpress_staged_products (
   suggested_category_id uuid references categories(id) on delete set null,
 
   publish       boolean not null default false,
-  product_type  product_type not null default 'STANDARD',
+  -- Deliberately text-with-a-check rather than the `product_type` enum: this is a
+  -- staging value that only becomes a real enum value when the row is committed into
+  -- `products`, and not depending on the enum keeps this migration runnable whatever
+  -- schema the enum happens to live in.
+  product_type  text not null default 'STANDARD'
+    check (product_type in ('STANDARD','ACCESSORY','CARE_PRODUCT','BUNDLE','GIFT_CARD')),
   brand         text,
 
   currency_code text,
@@ -52,6 +57,16 @@ create table if not exists aliexpress_staged_products (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+-- schema.sql already defines set_updated_at(); create it only if this database
+-- somehow doesn't have it, so the migration can't fail on a missing helper.
+do $$ begin
+  if not exists (select 1 from pg_proc where proname = 'set_updated_at') then
+    create function set_updated_at() returns trigger language plpgsql as $fn$
+      begin new.updated_at = now(); return new; end
+    $fn$;
+  end if;
+end $$;
 
 do $$ begin
   create trigger trg_aliexpress_staged_products_updated_at
