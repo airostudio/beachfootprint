@@ -152,7 +152,15 @@ export interface AdminProductSummary extends ProductSummary {
 
 export async function getAllProductsForAdmin(): Promise<AdminProductSummary[]> {
   const tenantId = await getTenantId();
-  const { data, error } = await db().from("products").select(`${PRODUCT_COLUMNS}, status`).eq("tenant_id", tenantId);
+  // Newest first, explicitly: without an ORDER BY, Postgres returns rows in arbitrary order and
+  // PostgREST caps the response at its default page size — so a just-created product could be
+  // missing from this list entirely on a catalogue of any size.
+  const { data, error } = await db()
+    .from("products")
+    .select(`${PRODUCT_COLUMNS}, status`)
+    .eq("tenant_id", tenantId)
+    .order("created_at", { ascending: false })
+    .limit(2000);
   if (error) throw new Error(`Could not load products: ${error.message}`);
   const rows = (data ?? []) as (ProductRow & { status: string })[];
   const hydrated = await hydrate(rows.map((r) => r.id));

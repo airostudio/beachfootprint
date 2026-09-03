@@ -42,6 +42,7 @@ interface ConfirmOutcome {
   stagedId: string;
   ok: boolean;
   handle?: string;
+  status?: "DRAFT" | "PUBLISHED";
   error?: string;
 }
 
@@ -186,10 +187,27 @@ export default function AliExpressStagingPage() {
           <ul className="text-xs text-stone-600 space-y-1">
             {outcomes.map((o) => (
               <li key={o.stagedId}>
-                {o.ok ? `✓ ${o.handle}` : <span className="text-red-600">✕ {o.error}</span>}
+                {o.ok ? (
+                  <>
+                    ✓ <span className="font-medium">{o.handle}</span>
+                    {o.status === "DRAFT" ? (
+                      <span className="text-amber-700"> — created as Draft, so it is not on the storefront yet</span>
+                    ) : (
+                      <span className="text-green-700"> — published and live</span>
+                    )}
+                  </>
+                ) : (
+                  <span className="text-red-600">✕ {o.error}</span>
+                )}
               </li>
             ))}
           </ul>
+          {outcomes.some((o) => o.ok && o.status === "DRAFT") && (
+            <p className="text-xs text-stone-500 mt-2">
+              Draft products appear in Products (newest first) but stay off the storefront until published — use
+              &ldquo;Publish All Drafts&rdquo; there, or set the status before confirming.
+            </p>
+          )}
           <Link href="/admin/products" className="text-xs underline mt-3 inline-block">
             View them in Products →
           </Link>

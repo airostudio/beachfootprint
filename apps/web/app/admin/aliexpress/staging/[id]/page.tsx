@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 
 interface StagedSku {
   aliexpressSkuId: string;
@@ -102,7 +101,6 @@ function dollarsToCents(value: string): number | null {
 }
 
 export default function StagedProductEditor({ params }: { params: { id: string } }) {
-  const router = useRouter();
   const [product, setProduct] = useState<StagedProduct | null>(null);
   const [categories, setCategories] = useState<CategoryOption[]>([]);
   const [loading, setLoading] = useState(true);
@@ -112,6 +110,7 @@ export default function StagedProductEditor({ params }: { params: { id: string }
   const [error, setError] = useState<string | null>(null);
   const [savedAt, setSavedAt] = useState<string | null>(null);
   const [generatingSeo, setGeneratingSeo] = useState(false);
+  const [confirmed, setConfirmed] = useState<{ handle: string; status: "DRAFT" | "PUBLISHED" } | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -247,7 +246,9 @@ export default function StagedProductEditor({ params }: { params: { id: string }
       const data = await res.json();
       const outcome = data.results?.[0];
       if (!res.ok || !outcome?.ok) throw new Error(outcome?.error ?? data.error ?? "Could not add this product to the store");
-      router.push("/admin/aliexpress/staging");
+      // Show what happened rather than redirecting silently — a Draft product is easy to
+      // mistake for "nothing happened", since it never reaches the storefront.
+      setConfirmed({ handle: outcome.handle ?? "", status: outcome.status ?? "DRAFT" });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not add this product to the store");
     } finally {
@@ -296,11 +297,27 @@ export default function StagedProductEditor({ params }: { params: { id: string }
 
       {error && <p className="text-sm text-red-600 mb-6">{error}</p>}
 
-      <div className="border border-stone-300 bg-stone-50 px-4 py-3 mb-6 text-xs text-stone-600">
-        This product is <span className="font-medium">not in the store yet</span>. Saving keeps your edits here in
-        staging — it&rsquo;s <span className="font-medium">Confirm &amp; add to store</span> that actually creates the
-        product.
-      </div>
+      {confirmed ? (
+        <div className="border border-green-700 bg-green-50 px-4 py-3 mb-6 text-xs text-stone-700">
+          Added to the store as <span className="font-medium">{confirmed.handle}</span>
+          {confirmed.status === "DRAFT"
+            ? " — as a Draft, so it is not on the storefront until you publish it."
+            : " — published and live on the storefront."}{" "}
+          <Link href="/admin/products" className="underline">
+            Open Products
+          </Link>{" "}
+          ·{" "}
+          <Link href="/admin/aliexpress/staging" className="underline">
+            Back to staging
+          </Link>
+        </div>
+      ) : (
+        <div className="border border-stone-300 bg-stone-50 px-4 py-3 mb-6 text-xs text-stone-600">
+          This product is <span className="font-medium">not in the store yet</span>. Saving keeps your edits here in
+          staging — it&rsquo;s <span className="font-medium">Confirm &amp; add to store</span> that actually creates the
+          product.
+        </div>
+      )}
 
       <section className="card p-6 mb-6">
         <h2 className="text-sm font-medium mb-4">Images</h2>
