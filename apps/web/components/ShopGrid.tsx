@@ -4,14 +4,22 @@ import ProductCard from "@/components/ProductCard";
 import FilterSidebar, { useFilteredProducts } from "@/components/FilterSidebar";
 import type { ProductSummary } from "@/lib/types";
 
-export default function ShopGrid({ products, title, description }: { products: ProductSummary[]; title: string; description?: string }) {
+export default function ShopGrid({
+  products,
+  title,
+  description,
+}: {
+  products: ProductSummary[];
+  title: string;
+  description?: React.ReactNode;
+}) {
   const { filters, setFilters, materials, filtered } = useFilteredProducts(products);
 
   return (
     <div className="container-page py-14">
       <div className="mb-10 max-w-2xl">
         <h1 className="font-serif text-4xl mb-3">{title}</h1>
-        {description && <p className="text-stone-500">{description}</p>}
+        {typeof description === "string" ? <p className="text-stone-500">{description}</p> : description}
       </div>
       <div className="grid lg:grid-cols-[220px_1fr] gap-10">
         <FilterSidebar materials={materials} filters={filters} onChange={setFilters} />
