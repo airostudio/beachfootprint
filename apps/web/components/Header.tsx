@@ -15,7 +15,7 @@ const primaryNav = [
 ];
 
 const iconLinks = [
-  { label: "Search", href: "/shop?focus=search" },
+  { label: "Search", href: "/search" },
   { label: "Wishlist", href: "/account/wishlist" },
   { label: "Account", href: "/account" },
   { label: "Cart", href: "/cart" },

@@ -177,6 +177,48 @@ export async function getProductsBySlugs(slugs: string[]): Promise<ProductSummar
   return rows.map((r) => toSummary(r, hydrated));
 }
 
+/**
+ * Real (server-side, database) search rather than the client-side filter /product-finder runs
+ * over an already-fetched product list — this queries only matching rows, so it stays cheap as
+ * the catalogue grows instead of shipping every product to the browser to filter.
+ *
+ * No full-text-search column exists yet (no tsvector/GIN index in the schema), so this is
+ * ILIKE substring matching, issued as two separate queries (title, then description) rather than
+ * one `.or()` filter — building an `.or()` condition string by hand from unescaped user input
+ * risks a malformed or unintended filter if the query contains a comma or parenthesis, which
+ * `.or()`'s mini-syntax treats specially. Title matches are ranked first by concatenation order,
+ * which is simple but good enough without a real ranking function.
+ */
+export async function searchProducts(query: string, limit = 24): Promise<ProductSummary[]> {
+  const q = query.trim();
+  if (q.length === 0) return [];
+
+  const tenantId = await getTenantId();
+  const supabase = db();
+  // Escape LIKE's own wildcard characters so a query containing "%" or "_" is matched literally,
+  // not as a pattern the searcher didn't intend.
+  const escaped = q.replace(/[%_\\]/g, (m) => `\\${m}`);
+  const pattern = `%${escaped}%`;
+
+  const [{ data: titleRows, error: titleError }, { data: descRows, error: descError }] = await Promise.all([
+    supabase.from("products").select(PRODUCT_COLUMNS).eq("tenant_id", tenantId).eq("status", "PUBLISHED").ilike("title", pattern).limit(limit),
+    supabase.from("products").select(PRODUCT_COLUMNS).eq("tenant_id", tenantId).eq("status", "PUBLISHED").ilike("short_description", pattern).limit(limit),
+  ]);
+  if (titleError) throw new Error(`Could not search products: ${titleError.message}`);
+  if (descError) throw new Error(`Could not search products: ${descError.message}`);
+
+  const seen = new Set<string>();
+  const rows: ProductRow[] = [];
+  for (const row of [...((titleRows ?? []) as ProductRow[]), ...((descRows ?? []) as ProductRow[])]) {
+    if (seen.has(row.id) || rows.length >= limit) continue;
+    seen.add(row.id);
+    rows.push(row);
+  }
+
+  const hydrated = await hydrate(rows.map((r) => r.id));
+  return rows.map((r) => toSummary(r, hydrated));
+}
+
 export async function getProductsByCategory(handle: string): Promise<ProductSummary[]> {
   const tenantId = await getTenantId();
   const supabase = db();
