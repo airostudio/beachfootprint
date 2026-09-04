@@ -15,7 +15,12 @@ export async function GET(request: Request) {
   try {
     const supabase = createServiceRoleSupabaseClient();
     const tenantId = await resolveTenantId(supabase, tenantParam);
-    return NextResponse.json({ staged: await listStagedProducts(supabase, tenantId) });
+    const staged = await listStagedProducts(supabase, tenantId);
+    // Logged for the same reason as the stage route's success log: pairing the two makes a
+    // "it said staged but the queue is empty" report traceable to a tenant mismatch, if that's
+    // what it turns out to be, straight from the runtime logs.
+    console.log(`[aliexpress/staged] tenant=${tenantId} count=${staged.length}`);
+    return NextResponse.json({ staged });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Could not load the staging queue";
     return NextResponse.json({ error: message }, { status: 500 });
