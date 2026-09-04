@@ -1,18 +1,19 @@
-const timeline = ["Order placed", "Payment confirmed", "Production started", "Quality check", "Preparing shipment", "Shipped", "Delivered"];
+import Link from "next/link";
 
-export default function OrderDetailPage({ params }: { params: { id: string } }) {
+// Deliberately does NOT look up the real order by id: without a signed-in customer to check
+// ownership against, doing so would let anyone who knows or guesses an order id see another
+// customer's name, address and order total — an IDOR, not a feature. This stays an honest stub
+// until account sign-in exists (see README "What's stubbed") and can check who's asking.
+export default function OrderDetailPage() {
   return (
     <div>
-      <h2 className="font-serif text-2xl mb-6">Order {params.id}</h2>
-      <ol className="space-y-4">
-        {timeline.map((step, i) => (
-          <li key={step} className="flex items-center gap-3 text-sm">
-            <span className={`w-2 h-2 rounded-full ${i < 4 ? "bg-ink-950" : "bg-stone-300"}`} />
-            <span className={i < 4 ? "text-ink-900" : "text-stone-400"}>{step}</span>
-          </li>
-        ))}
-      </ol>
-      <p className="text-xs text-stone-500 mt-8">Some statuses may be hidden by the merchant depending on order type.</p>
+      <Link href="/account/orders" className="text-xs text-stone-500 underline">
+        ← Back to Orders
+      </Link>
+      <p className="text-sm text-stone-500 border border-stone-200 p-6 mt-4">
+        Sign in to see this order&rsquo;s details and delivery status. Account sign-in isn&rsquo;t connected yet — see
+        the README for what&rsquo;s still stubbed.
+      </p>
     </div>
   );
 }

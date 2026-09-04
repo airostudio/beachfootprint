@@ -79,9 +79,10 @@ export async function POST(request: Request) {
 }
 
 /**
- * Marks the order paid and draws down stock. Safe to run twice: Stripe retries events, and
- * `checkout.session.completed` and `async_payment_succeeded` can both arrive for one order, so
- * this returns early if the order is already past PENDING_PAYMENT.
+ * Marks the order paid and draws down stock. Safe to run concurrently or twice: Stripe retries
+ * events, and `checkout.session.completed` and `async_payment_succeeded` can both arrive for one
+ * order — the conditional update below only lets one delivery actually claim the order, and every
+ * other delivery (whether it arrives before or after) returns without touching stock or payments.
  */
 async function markOrderPaid(supabase: ReturnType<typeof createServiceRoleSupabaseClient>, session: Stripe.Checkout.Session) {
   const orderId = session.metadata?.orderId;
@@ -102,8 +103,22 @@ async function markOrderPaid(supabase: ReturnType<typeof createServiceRoleSupaba
 
   const paymentIntentId = typeof session.payment_intent === "string" ? session.payment_intent : session.payment_intent?.id;
 
-  const { error: orderError } = await supabase.from("orders").update({ status: "PAID" }).eq("id", orderId).eq("status", "PENDING_PAYMENT");
+  // The read above is not a lock: `checkout.session.completed` and `async_payment_succeeded` can
+  // both arrive for one order, or Stripe can retry, and two deliveries can both pass that read
+  // before either writes. The `.eq("status", "PENDING_PAYMENT")` guard means only the delivery that
+  // still finds the row PENDING actually updates it — but only if we check that here. Without this
+  // check both deliveries would fall through and double-decrement stock below.
+  const { data: claimed, error: orderError } = await supabase
+    .from("orders")
+    .update({ status: "PAID" })
+    .eq("id", orderId)
+    .eq("status", "PENDING_PAYMENT")
+    .select("id");
   if (orderError) throw new Error(`Could not mark order ${orderId} paid: ${orderError.message}`);
+  if (!claimed || claimed.length === 0) {
+    console.log(`[webhooks/stripe] order ${orderId} was claimed by a concurrent delivery — skipping`);
+    return;
+  }
 
   await supabase
     .from("payments")
