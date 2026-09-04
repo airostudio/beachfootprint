@@ -28,9 +28,10 @@ export interface ResolvedCart {
   totalCents: number;
 }
 
-/** Flat-rate shipping until real rates are configured; free over the threshold. */
-const SHIPPING_FLAT_CENTS = 995;
-const FREE_SHIPPING_THRESHOLD_CENTS = 10000;
+/** Fallbacks if a tenant has no tenant_settings row yet — match this table's own column defaults. */
+const DEFAULT_SHIPPING_FLAT_CENTS = 995;
+const DEFAULT_FREE_SHIPPING_THRESHOLD_CENTS = 10000;
+const DEFAULT_TAX_RATE_PERCENT = 0;
 
 /**
  * Resolves cart lines against the database — the single source of truth for what anything costs.
@@ -52,14 +53,25 @@ export async function resolveCart(
     return { lines: [], currency: "USD", subtotalCents: 0, shippingCents: 0, taxCents: 0, totalCents: 0 };
   }
 
-  const { data, error } = await supabase
-    .from("product_variants")
-    .select("id, product_id, title, sku, price, currency, is_active, products!inner(id, tenant_id, title, handle, status)")
-    .in(
-      "id",
-      wanted.map((l) => l.variantId),
-    );
+  const [{ data, error }, { data: settingsRow }] = await Promise.all([
+    supabase
+      .from("product_variants")
+      .select("id, product_id, title, sku, price, currency, is_active, products!inner(id, tenant_id, title, handle, status)")
+      .in(
+        "id",
+        wanted.map((l) => l.variantId),
+      ),
+    supabase
+      .from("tenant_settings")
+      .select("shipping_flat_rate_cents, free_shipping_threshold_cents, tax_rate_percent")
+      .eq("tenant_id", tenantId)
+      .maybeSingle(),
+  ]);
   if (error) throw new Error(`Could not price the cart: ${error.message}`);
+
+  const shippingFlatCents = settingsRow?.shipping_flat_rate_cents ?? DEFAULT_SHIPPING_FLAT_CENTS;
+  const freeShippingThresholdCents = settingsRow?.free_shipping_threshold_cents ?? DEFAULT_FREE_SHIPPING_THRESHOLD_CENTS;
+  const taxRatePercent = settingsRow?.tax_rate_percent ?? DEFAULT_TAX_RATE_PERCENT;
 
   interface VariantRow {
     id: string;
@@ -140,15 +152,18 @@ export async function resolveCart(
   }
 
   const subtotalCents = lines.filter((l) => l.purchasable).reduce((sum, l) => sum + l.lineTotalCents, 0);
-  const shippingCents = subtotalCents === 0 || subtotalCents >= FREE_SHIPPING_THRESHOLD_CENTS ? 0 : SHIPPING_FLAT_CENTS;
+  const shippingCents = subtotalCents === 0 || subtotalCents >= freeShippingThresholdCents ? 0 : shippingFlatCents;
+  // A single flat rate, merchant-configured — not real jurisdiction-based tax (US nexus/state,
+  // GST/VAT). Zero (the default) is honest until a merchant sets one or a real tax engine is
+  // connected; this never invents a rate on its own.
+  const taxCents = Math.round((subtotalCents * taxRatePercent) / 100);
 
   return {
     lines,
     currency,
     subtotalCents,
     shippingCents,
-    // No tax engine is configured; GST/VAT handling is a deliberate gap rather than a guess.
-    taxCents: 0,
-    totalCents: subtotalCents + shippingCents,
+    taxCents,
+    totalCents: subtotalCents + shippingCents + taxCents,
   };
 }

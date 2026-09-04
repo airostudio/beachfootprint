@@ -20,7 +20,12 @@ interface VariantFixture {
  * Supabase mock, just enough surface for this function's three queries (product_variants,
  * inventory_items, product_media) so the pricing math is tested without a live database.
  */
-function fakeSupabase(fixtures: { variants: VariantFixture[]; stock: Record<string, number>; media?: Record<string, string> }): SupabaseClient {
+function fakeSupabase(fixtures: {
+  variants: VariantFixture[];
+  stock: Record<string, number>;
+  media?: Record<string, string>;
+  settings?: { shipping_flat_rate_cents?: number; free_shipping_threshold_cents?: number; tax_rate_percent?: number } | null;
+}): SupabaseClient {
   return {
     from(table: string) {
       if (table === "product_variants") {
@@ -45,6 +50,9 @@ function fakeSupabase(fixtures: { variants: VariantFixture[]; stock: Record<stri
             }),
           }),
         };
+      }
+      if (table === "tenant_settings") {
+        return { select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: fixtures.settings ?? null, error: null }) }) }) };
       }
       throw new Error(`fakeSupabase: unexpected table "${table}"`);
     },
@@ -161,5 +169,34 @@ describe("resolveCart", () => {
     // Second entry (quantity 0) is filtered out entirely, so only the clamped-to-99 line remains.
     expect(cart.lines).toHaveLength(1);
     expect(cart.lines[0].quantity).toBe(99);
+  });
+
+  it("defaults to the previous hardcoded shipping/tax behavior when a tenant has no settings row", async () => {
+    const supabase = fakeSupabase({ variants: [variant({ price: 2500 })], stock: { "variant-1": 10 }, settings: null });
+    const cart = await resolveCart(supabase, TENANT_ID, [{ variantId: "variant-1", quantity: 1 }]);
+    expect(cart.shippingCents).toBe(995);
+    expect(cart.taxCents).toBe(0);
+  });
+
+  it("applies a merchant-configured flat shipping rate and free-shipping threshold", async () => {
+    const supabase = fakeSupabase({
+      variants: [variant({ price: 5000 })],
+      stock: { "variant-1": 10 },
+      settings: { shipping_flat_rate_cents: 500, free_shipping_threshold_cents: 6000 },
+    });
+    const cart = await resolveCart(supabase, TENANT_ID, [{ variantId: "variant-1", quantity: 1 }]);
+    expect(cart.shippingCents).toBe(500);
+  });
+
+  it("applies a merchant-configured flat tax rate to the subtotal, rounded to the cent", async () => {
+    const supabase = fakeSupabase({
+      variants: [variant({ price: 999 })],
+      stock: { "variant-1": 10 },
+      settings: { tax_rate_percent: 8.25 },
+    });
+    const cart = await resolveCart(supabase, TENANT_ID, [{ variantId: "variant-1", quantity: 1 }]);
+    // 999 * 8.25% = 82.4175 -> rounds to 82
+    expect(cart.taxCents).toBe(82);
+    expect(cart.totalCents).toBe(cart.subtotalCents + cart.shippingCents + cart.taxCents);
   });
 });

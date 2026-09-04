@@ -122,6 +122,12 @@ export default function CartPage() {
                 <dt className="text-stone-500">Shipping</dt>
                 <dd>{cart?.shippingCents ? formatMoney(cart.shippingCents, cart.currency) : "Free"}</dd>
               </div>
+              {cart && cart.taxCents > 0 && (
+                <div className="flex justify-between">
+                  <dt className="text-stone-500">Tax</dt>
+                  <dd>{formatMoney(cart.taxCents, cart.currency)}</dd>
+                </div>
+              )}
               <div className="flex justify-between border-t border-stone-200 pt-2 mt-2 font-medium">
                 <dt>Total</dt>
                 <dd>{formatMoney(cart?.totalCents ?? 0, cart?.currency ?? "USD")}</dd>

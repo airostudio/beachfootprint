@@ -38,6 +38,7 @@ interface ResolvedCart {
   currency: string;
   subtotalCents: number;
   shippingCents: number;
+  taxCents: number;
   totalCents: number;
 }
 
@@ -191,6 +192,12 @@ function CheckoutFlow() {
                 <dt className="text-stone-500">Shipping</dt>
                 <dd>{cart?.shippingCents ? formatMoney(cart.shippingCents, cart.currency) : "Free"}</dd>
               </div>
+              {cart && cart.taxCents > 0 && (
+                <div className="flex justify-between">
+                  <dt className="text-stone-500">Tax</dt>
+                  <dd>{formatMoney(cart.taxCents, cart.currency)}</dd>
+                </div>
+              )}
               <div className="flex justify-between font-medium pt-2">
                 <dt>Total</dt>
                 <dd>{formatMoney(cart?.totalCents ?? 0, cart?.currency ?? "USD")}</dd>

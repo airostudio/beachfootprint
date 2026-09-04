@@ -157,6 +157,18 @@ export async function POST(request: Request) {
               },
             ]
           : []),
+        ...(cart.taxCents > 0
+          ? [
+              {
+                quantity: 1,
+                price_data: {
+                  currency: cart.currency.toLowerCase(),
+                  unit_amount: cart.taxCents,
+                  product_data: { name: "Tax" },
+                },
+              },
+            ]
+          : []),
       ],
       // The webhook trusts this to find the order — it is set by us, not the browser.
       metadata: { orderId, tenantId },

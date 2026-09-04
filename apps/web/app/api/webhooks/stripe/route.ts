@@ -93,7 +93,7 @@ async function markOrderPaid(supabase: ReturnType<typeof createServiceRoleSupaba
     return;
   }
 
-  const { data: order } = await supabase.from("orders").select("id, status, total").eq("id", orderId).maybeSingle();
+  const { data: order } = await supabase.from("orders").select("id, tenant_id, status, total").eq("id", orderId).maybeSingle();
   if (!order) {
     console.error(`[webhooks/stripe] order ${orderId} not found for session ${session.id}`);
     return;
@@ -131,6 +131,12 @@ async function markOrderPaid(supabase: ReturnType<typeof createServiceRoleSupaba
   // Draw down stock for what was actually bought. Read-then-write rather than an atomic
   // decrement because PostgREST has no expression update; oversell risk is bounded by the
   // availability check at session creation and by AliExpress being the real stock authority.
+  //
+  // That check ran when the Stripe session was created, not now — a slow checkout (or two
+  // customers racing for the last unit) can still leave less stock than this order needs by the
+  // time payment actually clears. The payment has already succeeded at this point, so this never
+  // blocks or reverses the order; it clamps the ledger at zero as before and logs a
+  // stock_shortfall entry so it's visible in Orders instead of silently going negative-in-spirit.
   const { data: items } = await supabase.from("order_items").select("variant_id, quantity, title").eq("order_id", orderId);
   for (const item of ((items ?? []) as { variant_id: string; quantity: number; title: string }[])) {
     const { data: inventory } = await supabase
@@ -139,8 +145,20 @@ async function markOrderPaid(supabase: ReturnType<typeof createServiceRoleSupaba
       .eq("variant_id", item.variant_id)
       .maybeSingle();
     if (!inventory) continue;
-    const remaining = Math.max(0, (inventory.stock_on_hand as number) - item.quantity);
+    const available = inventory.stock_on_hand as number;
+    const remaining = Math.max(0, available - item.quantity);
     await supabase.from("inventory_items").update({ stock_on_hand: remaining }).eq("variant_id", item.variant_id);
+
+    if (available < item.quantity) {
+      await supabase.from("fulfillment_logs").insert({
+        tenant_id: order.tenant_id,
+        order_id: orderId,
+        variant_id: item.variant_id,
+        event: "stock_shortfall",
+        detail: { title: item.title, requested: item.quantity, availableAtPayment: available },
+      });
+      console.warn(`[webhooks/stripe] order ${orderId}: paid for ${item.quantity} × ${item.title}, only ${available} in stock`);
+    }
   }
 
   console.log(`[webhooks/stripe] order ${orderId} PAID (${session.amount_total} ${session.currency}) intent=${paymentIntentId}`);
