@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import type Stripe from "stripe";
 import { createServiceRoleSupabaseClient } from "@trend/db";
 import { stripe } from "@/lib/checkout/stripe";
+import { placeAliExpressOrder } from "@/lib/fulfillment/placeAliExpressOrder";
 
 export const runtime = "nodejs";
 
@@ -142,4 +143,13 @@ async function markOrderPaid(supabase: ReturnType<typeof createServiceRoleSupaba
   }
 
   console.log(`[webhooks/stripe] order ${orderId} PAID (${session.amount_total} ${session.currency}) intent=${paymentIntentId}`);
+
+  // Auto-place with the supplier immediately on payment — no human review gate. A failure here
+  // is caught and logged to fulfillment_logs by placeAliExpressOrder itself rather than thrown,
+  // so it never turns a successful payment into a 500 that makes Stripe retry the whole handler
+  // (which would re-run the payment/stock updates above against an already-PAID order).
+  const placement = await placeAliExpressOrder(supabase, orderId);
+  if (!placement.ok) {
+    console.error(`[webhooks/stripe] order ${orderId} PAID but AliExpress placement failed: ${placement.error}`);
+  }
 }
