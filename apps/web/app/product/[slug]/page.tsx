@@ -5,8 +5,10 @@ import ProductGallery from "@/components/ProductGallery";
 import ProductTabs from "@/components/ProductTabs";
 import AddToCartActions from "@/components/AddToCartActions";
 import ProductCard from "@/components/ProductCard";
+import ProductReviews from "@/components/ProductReviews";
 import { formatMoney } from "@/lib/format";
 import { getProductBySlug, getProductsBySlugs } from "@/lib/data/products";
+import { getApprovedReviews } from "@/lib/data/reviews";
 
 export const dynamic = "force-dynamic";
 
@@ -28,9 +30,10 @@ export default async function ProductPage({ params }: Props) {
   const product = await getProductBySlug(params.slug);
   if (!product) notFound();
 
-  const [compatible, related] = await Promise.all([
+  const [compatible, related, reviews] = await Promise.all([
     getProductsBySlugs(product.compatibleAccessorySlugs),
     getProductsBySlugs(product.relatedSlugs),
+    getApprovedReviews(product.id),
   ]);
 
   const jsonLd = {
@@ -85,6 +88,8 @@ export default async function ProductPage({ params }: Props) {
           <ProductTabs product={product} />
         </div>
       </div>
+
+      <ProductReviews productId={product.id} reviews={reviews} />
 
       {compatible.length > 0 && (
         <section className="mt-24">
