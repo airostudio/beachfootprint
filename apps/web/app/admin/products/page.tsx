@@ -1,13 +1,18 @@
 import Link from "next/link";
 import { getAllProductsForAdmin } from "@/lib/data/products";
 import { getStoreCurrency } from "@/lib/data/settings";
+import { countDemoProducts } from "@/lib/data/demoProducts";
 import { formatMoney } from "@/lib/format";
-import { publishAllDrafts, publishProduct, setCatalogueCurrency } from "./actions";
+import { publishAllDrafts, publishProduct, removeDemoProducts, setCatalogueCurrency } from "./actions";
 
 export const dynamic = "force-dynamic";
 
 export default async function AdminProductsPage() {
-  const [products, storeCurrency] = await Promise.all([getAllProductsForAdmin(), getStoreCurrency()]);
+  const [products, storeCurrency, demoCount] = await Promise.all([
+    getAllProductsForAdmin(),
+    getStoreCurrency(),
+    countDemoProducts(),
+  ]);
   const draftCount = products.filter((p) => p.status === "DRAFT").length;
 
   // What the catalogue is actually priced in, against what the store is configured to sell in.
@@ -62,6 +67,25 @@ export default async function AdminProductsPage() {
         </span>
         {unpriced > 0 && <span className="text-red-600">{unpriced} with no price</span>}
       </div>
+      {demoCount > 0 && (
+        <div className="border border-amber-600 bg-amber-50 px-4 py-3 mb-4 text-xs">
+          <p className="mb-2">
+            <span className="font-medium">
+              {demoCount} placeholder product{demoCount === 1 ? "" : "s"} from the demo seed
+            </span>{" "}
+            {demoCount === 1 ? "is" : "are"} still in the catalogue. They have no images and aren&rsquo;t real stock —
+            they&rsquo;re what a fresh install ships with so the storefront isn&rsquo;t empty.
+          </p>
+          <form action={removeDemoProducts}>
+            <button type="submit" className="btn-secondary text-xs px-3 py-1.5">
+              Remove {demoCount} placeholder product{demoCount === 1 ? "" : "s"}
+            </button>
+          </form>
+          <p className="text-stone-600 mt-2">
+            Matched by the exact seeded handles, so nothing you or an import created can be removed by this.
+          </p>
+        </div>
+      )}
       {offCurrency > 0 && (
         <div className="border border-red-200 bg-red-50 px-4 py-3 mb-4 text-xs">
           <p className="text-red-700 mb-2">

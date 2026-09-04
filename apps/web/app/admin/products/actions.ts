@@ -2,11 +2,33 @@
 
 import { revalidatePath } from "next/cache";
 import { db, getTenantId } from "@/lib/data/client";
+import { DEMO_PRODUCT_HANDLES } from "@/lib/data/demoProducts";
 
 export async function publishProduct(productId: string): Promise<void> {
   const tenantId = await getTenantId();
   const { error } = await db().from("products").update({ status: "PUBLISHED" }).eq("id", productId).eq("tenant_id", tenantId);
   if (error) throw new Error(`Could not publish product: ${error.message}`);
+  revalidatePath("/admin/products");
+  revalidatePath("/admin");
+  revalidatePath("/shop");
+  revalidatePath("/");
+}
+
+/**
+ * Deletes the eight placeholder products supabase/seed.sql creates, for admins who never ran
+ * migrations/0004_remove_demo_seed_products.sql by hand (which is most of them — it's a SQL file
+ * you have to know exists). Matched by exact seeded handle, so a real product can't be caught by
+ * it; variants, media, category links and inventory go with them via `on delete cascade`.
+ */
+export async function removeDemoProducts(): Promise<void> {
+  const tenantId = await getTenantId();
+  const { error } = await db()
+    .from("products")
+    .delete()
+    .eq("tenant_id", tenantId)
+    .in("handle", DEMO_PRODUCT_HANDLES as unknown as string[]);
+  if (error) throw new Error(`Could not remove the demo products: ${error.message}`);
+
   revalidatePath("/admin/products");
   revalidatePath("/admin");
   revalidatePath("/shop");

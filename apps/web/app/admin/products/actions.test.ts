@@ -7,6 +7,11 @@ interface UpdateCall {
   productIds: string[];
 }
 
+interface DeleteCall {
+  tenantId: string;
+  handles: string[];
+}
+
 /** Records what the relabel actually wrote, per chunk, so batching is observable. */
 function fakeSupabase(productIds: string[], calls: UpdateCall[]) {
   return {
@@ -39,7 +44,30 @@ vi.mock("@/lib/data/client", () => ({
   getTenantId: async () => TENANT_ID,
 }));
 
-const { setCatalogueCurrency } = await import("./actions");
+const { setCatalogueCurrency, removeDemoProducts } = await import("./actions");
+const { DEMO_PRODUCT_HANDLES } = await import("@/lib/data/demoProducts");
+
+/** Records the delete's filters so we can assert it can only ever hit the seeded handles. */
+function fakeDeleteSupabase(calls: DeleteCall[]) {
+  return {
+    from: () => ({
+      delete: () => {
+        let tenantId = "";
+        const node: any = {
+          eq: (_col: string, value: string) => {
+            tenantId = value;
+            return node;
+          },
+          in: async (_col: string, handles: string[]) => {
+            calls.push({ tenantId, handles });
+            return { error: null };
+          },
+        };
+        return node;
+      },
+    }),
+  };
+}
 
 function formData(currency: string): FormData {
   const fd = new FormData();
@@ -88,5 +116,21 @@ describe("setCatalogueCurrency", () => {
     (globalThis as any).__fakeSupabase = fakeSupabase([], calls);
     await setCatalogueCurrency(formData("USD"));
     expect(calls).toHaveLength(0);
+  });
+});
+
+describe("removeDemoProducts", () => {
+  it("deletes only the exact seeded handles, scoped to the tenant", async () => {
+    const deletes: DeleteCall[] = [];
+    (globalThis as any).__fakeSupabase = fakeDeleteSupabase(deletes);
+
+    await removeDemoProducts();
+
+    expect(deletes).toHaveLength(1);
+    expect(deletes[0].tenantId).toBe(TENANT_ID);
+    // Exact-handle matching is the whole safety property: a real product can never be caught.
+    expect(deletes[0].handles).toEqual([...DEMO_PRODUCT_HANDLES]);
+    expect(deletes[0].handles).toContain("driftwood-kimono");
+    expect(deletes[0].handles.every((h) => typeof h === "string" && !h.includes("*"))).toBe(true);
   });
 });
