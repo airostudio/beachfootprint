@@ -4,6 +4,7 @@ import { createServiceRoleSupabaseClient } from "@trend/db";
 import { resolveTenantId } from "@/lib/import/tenant";
 import { resolveCart } from "@/lib/checkout/pricing";
 import { siteUrl, stripe } from "@/lib/checkout/stripe";
+import { checkRateLimit, clientIp } from "@/lib/rateLimit";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
@@ -33,6 +34,16 @@ const bodySchema = z.object({
  *   never marks anything paid, because a customer reaching the success page proves nothing.
  */
 export async function POST(request: Request) {
+  // Each call writes a PENDING_PAYMENT order and a Stripe session before the customer has paid
+  // anything, so hitting this repeatedly litters both with no charge ever resulting — limit by IP.
+  const rateLimit = checkRateLimit(`checkout-session:${clientIp(request)}`, 10, 60);
+  if (!rateLimit.allowed) {
+    return NextResponse.json(
+      { error: "Too many checkout attempts. Please wait a moment and try again." },
+      { status: 429, headers: { "Retry-After": String(rateLimit.retryAfterSeconds) } },
+    );
+  }
+
   const parsed = bodySchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) {
     return NextResponse.json({ error: "Please check the details entered.", detail: parsed.error.flatten() }, { status: 400 });

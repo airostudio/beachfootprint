@@ -1,4 +1,21 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { peekRateLimit, recordAttempt, clientIp } from "@/lib/rateLimit";
+
+/**
+ * Constant-time string comparison for the edge runtime (no `node:crypto`
+ * here, so no `timingSafeEqual`). Hashes both inputs to a fixed-length
+ * digest first so the comparison also doesn't leak the password's length,
+ * then compares every byte of the digest without short-circuiting.
+ */
+async function timingSafeStringEqual(a: string, b: string): Promise<boolean> {
+  const digest = async (value: string) => new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value)));
+  const [digestA, digestB] = await Promise.all([digest(a), digest(b)]);
+  let diff = 0;
+  for (let i = 0; i < digestA.length; i++) {
+    diff |= digestA[i] ^ digestB[i];
+  }
+  return diff === 0;
+}
 
 /**
  * HTTP Basic Auth in front of the entire admin area (pages + API routes).
@@ -7,7 +24,7 @@ import { NextResponse, type NextRequest } from "next/server";
  * endpoints from being open to the internet until real admin auth exists.
  * Username is ignored/anything; only the password is checked.
  */
-export function middleware(request: NextRequest) {
+export async function middleware(request: NextRequest) {
   const password = process.env.ADMIN_PASSWORD;
   // If unset, fail open with a loud console warning rather than locking
   // admins out entirely — but this should always be set in production.
@@ -16,11 +33,25 @@ export function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
+  // Lock out an IP after repeated bad passwords rather than letting Basic Auth be brute-forced
+  // at whatever rate the client can send requests. Only wrong passwords count against the
+  // lockout window (a legitimate admin's browser re-sends its cached Basic Auth header on
+  // every request, so counting successes too would lock out normal browsing).
+  const lockKey = `admin-login:${clientIp(request)}`;
+  const lockout = peekRateLimit(lockKey, 10);
+  if (!lockout.allowed) {
+    return new NextResponse("Too many failed admin login attempts. Please wait and try again.", {
+      status: 429,
+      headers: { "Retry-After": String(lockout.retryAfterSeconds) },
+    });
+  }
+
   const authHeader = request.headers.get("authorization");
   if (authHeader?.startsWith("Basic ")) {
     const decoded = atob(authHeader.slice(6));
     const suppliedPassword = decoded.slice(decoded.indexOf(":") + 1);
-    if (suppliedPassword === password) return NextResponse.next();
+    if (await timingSafeStringEqual(suppliedPassword, password)) return NextResponse.next();
+    recordAttempt(lockKey, 300);
   }
 
   return new NextResponse("Authentication required", {
