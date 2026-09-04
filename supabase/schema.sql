@@ -80,7 +80,16 @@ create table tenant_settings (
   -- SEO / indexing controls
   seo_allow_indexing       boolean not null default true,
   seo_allow_image_indexing boolean not null default true,
-  seo_robots_directives    text
+  seo_robots_directives    text,
+
+  -- Checkout: merchant-configurable in lieu of a real shipping-rate/tax engine (see
+  -- supabase/migrations/0007_checkout_settings.sql). tax_rate_percent is a single flat rate, not
+  -- real jurisdiction-based tax (US nexus/state, GST/VAT) — a merchant who needs exact tax should
+  -- configure a Stripe Tax-style provider rather than trust an invented rate.
+  shipping_flat_rate_cents      int not null default 995,
+  free_shipping_threshold_cents int not null default 10000,
+  tax_rate_percent              numeric(5,2) not null default 0
+    check (tax_rate_percent >= 0 and tax_rate_percent <= 100)
 );
 
 create table tax_settings (

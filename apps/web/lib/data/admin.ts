@@ -67,6 +67,7 @@ export interface AdminOrderSummary {
   itemCount: number;
   trackingNumber: string | null;
   aliexpressOrderId: string | null;
+  hasStockShortfall: boolean;
 }
 
 /**
@@ -103,11 +104,12 @@ export async function getAdminOrders(limit = 200): Promise<AdminOrderSummary[]> 
   const orderIds = rows.map((r) => r.id);
   const customerIds = [...new Set(rows.map((r) => r.customer_id).filter((id): id is string => Boolean(id)))];
 
-  const [{ data: itemRows }, { data: customerRows }] = await Promise.all([
+  const [{ data: itemRows }, { data: customerRows }, { data: shortfallRows }] = await Promise.all([
     supabase.from("order_items").select("order_id, quantity").in("order_id", orderIds),
     customerIds.length > 0
       ? supabase.from("customers").select("id, email").in("id", customerIds)
       : Promise.resolve({ data: [] as { id: string; email: string }[] }),
+    supabase.from("fulfillment_logs").select("order_id").eq("event", "stock_shortfall").in("order_id", orderIds),
   ]);
 
   const itemsByOrder = new Map<string, number>();
@@ -115,6 +117,7 @@ export async function getAdminOrders(limit = 200): Promise<AdminOrderSummary[]> 
     itemsByOrder.set(item.order_id, (itemsByOrder.get(item.order_id) ?? 0) + item.quantity);
   }
   const emailByCustomer = new Map(((customerRows ?? []) as { id: string; email: string }[]).map((c) => [c.id, c.email]));
+  const shortfallOrderIds = new Set(((shortfallRows ?? []) as { order_id: string }[]).map((r) => r.order_id));
 
   return rows.map((r) => ({
     id: r.id,
@@ -127,5 +130,6 @@ export async function getAdminOrders(limit = 200): Promise<AdminOrderSummary[]> 
     itemCount: itemsByOrder.get(r.id) ?? 0,
     trackingNumber: r.tracking_number,
     aliexpressOrderId: r.aliexpress_order_id,
+    hasStockShortfall: shortfallOrderIds.has(r.id),
   }));
 }

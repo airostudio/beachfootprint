@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import CheckoutSettingsCard from "@/components/admin/CheckoutSettingsCard";
 
 interface PaymentsStatus {
   stripe: {
@@ -208,6 +209,8 @@ export default function PaymentsSettingsPage() {
           </p>
         )}
       </section>
+
+      <CheckoutSettingsCard />
     </div>
   );
 }

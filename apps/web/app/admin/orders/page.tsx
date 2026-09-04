@@ -64,7 +64,17 @@ export default async function AdminOrdersPage() {
           <tbody>
             {orders.map((o) => (
               <tr key={o.id} className="border-b border-stone-100">
-                <td className="py-2 font-mono text-xs">{o.id.slice(0, 8)}</td>
+                <td className="py-2 font-mono text-xs">
+                  {o.id.slice(0, 8)}
+                  {o.hasStockShortfall && (
+                    <span
+                      title="Paid for more than was in stock at the time — check availability before fulfilling."
+                      className="ml-1 text-amber-600"
+                    >
+                      ⚠
+                    </span>
+                  )}
+                </td>
                 <td className="py-2 text-stone-500">{new Date(o.createdAt).toLocaleDateString()}</td>
                 <td className="py-2 text-stone-500">{o.customerEmail ?? "—"}</td>
                 <td className="py-2 text-stone-500">{o.itemCount}</td>
