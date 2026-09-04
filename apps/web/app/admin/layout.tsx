@@ -5,6 +5,7 @@ const sections = [
   { href: "/admin/products", label: "Products" },
   { href: "/admin/categories", label: "Categories" },
   { href: "/admin/orders", label: "Orders" },
+  { href: "/admin/reviews", label: "Reviews" },
   { href: "/admin/cms", label: "CMS & Banners" },
   { href: "/admin/payments", label: "Payments" },
   { href: "/admin/aliexpress", label: "AliExpress" },
