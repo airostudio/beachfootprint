@@ -122,12 +122,12 @@ async function notifyCustomerShipped(
   supabase: Db,
   event: { externalOrderId: string; trackingNumber: string; carrier: string; trackingUrl?: string },
 ): Promise<void> {
-  const { ConsoleEmailProvider } = await import("@trend/core");
+  const { getEmailProvider } = await import("@/lib/email/getEmailProvider");
   const { data: order } = await supabase.from("orders").select("id, customers(email)").eq("id", event.externalOrderId).single();
   const customerEmail = (order as any)?.customers?.email;
   if (!customerEmail) return;
 
-  await new ConsoleEmailProvider().sendTransactionalEmail({
+  await getEmailProvider().sendTransactionalEmail({
     to: customerEmail,
     templateKey: "order-shipped",
     subject: "Your Beach Footprints order has shipped",

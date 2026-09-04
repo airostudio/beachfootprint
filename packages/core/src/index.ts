@@ -7,5 +7,6 @@ export * from "./providers/adapters/mock-payment";
 export * from "./providers/adapters/stripe-payment";
 export * from "./providers/adapters/flat-rate-shipping";
 export * from "./providers/adapters/console-email";
+export * from "./providers/adapters/resend-email";
 export * from "./providers/adapters/deterministic-ai";
 export * from "./csv";

@@ -3,6 +3,7 @@ import type Stripe from "stripe";
 import { createServiceRoleSupabaseClient } from "@trend/db";
 import { stripe } from "@/lib/checkout/stripe";
 import { placeAliExpressOrder } from "@/lib/fulfillment/placeAliExpressOrder";
+import { getEmailProvider } from "@/lib/email/getEmailProvider";
 
 export const runtime = "nodejs";
 
@@ -130,8 +131,8 @@ async function markOrderPaid(supabase: ReturnType<typeof createServiceRoleSupaba
   // Draw down stock for what was actually bought. Read-then-write rather than an atomic
   // decrement because PostgREST has no expression update; oversell risk is bounded by the
   // availability check at session creation and by AliExpress being the real stock authority.
-  const { data: items } = await supabase.from("order_items").select("variant_id, quantity").eq("order_id", orderId);
-  for (const item of ((items ?? []) as { variant_id: string; quantity: number }[])) {
+  const { data: items } = await supabase.from("order_items").select("variant_id, quantity, title").eq("order_id", orderId);
+  for (const item of ((items ?? []) as { variant_id: string; quantity: number; title: string }[])) {
     const { data: inventory } = await supabase
       .from("inventory_items")
       .select("stock_on_hand")
@@ -144,6 +145,8 @@ async function markOrderPaid(supabase: ReturnType<typeof createServiceRoleSupaba
 
   console.log(`[webhooks/stripe] order ${orderId} PAID (${session.amount_total} ${session.currency}) intent=${paymentIntentId}`);
 
+  await sendOrderConfirmation(session, orderId, order.total, session.currency ?? "usd", (items ?? []) as { quantity: number; title: string }[]);
+
   // Auto-place with the supplier immediately on payment — no human review gate. A failure here
   // is caught and logged to fulfillment_logs by placeAliExpressOrder itself rather than thrown,
   // so it never turns a successful payment into a 500 that makes Stripe retry the whole handler
@@ -151,5 +154,36 @@ async function markOrderPaid(supabase: ReturnType<typeof createServiceRoleSupaba
   const placement = await placeAliExpressOrder(supabase, orderId);
   if (!placement.ok) {
     console.error(`[webhooks/stripe] order ${orderId} PAID but AliExpress placement failed: ${placement.error}`);
+  }
+}
+
+/**
+ * Fire-and-forget-ish: a failed confirmation email must never fail the webhook, since the
+ * payment itself already succeeded and Stripe should not retry the handler over an email issue.
+ */
+async function sendOrderConfirmation(
+  session: Stripe.Checkout.Session,
+  orderId: string,
+  total: number,
+  currency: string,
+  items: { quantity: number; title: string }[],
+): Promise<void> {
+  const to = session.customer_details?.email;
+  if (!to) {
+    console.log(`[webhooks/stripe] order ${orderId} has no customer email on the Stripe session — skipping confirmation email`);
+    return;
+  }
+  try {
+    await getEmailProvider().sendTransactionalEmail({
+      to,
+      templateKey: "order-confirmation",
+      data: {
+        orderId,
+        total: `${(total / 100).toFixed(2)} ${currency.toUpperCase()}`,
+        items: items.map((item) => ({ name: item.title, quantity: item.quantity })),
+      },
+    });
+  } catch (error) {
+    console.error(`[webhooks/stripe] order ${orderId} PAID but confirmation email failed: ${error instanceof Error ? error.message : error}`);
   }
 }
