@@ -45,33 +45,45 @@ export default function PaymentsSettingsPage() {
   const [currencySavedAt, setCurrencySavedAt] = useState<string | null>(null);
 
   useEffect(() => {
-    fetch("/api/admin/payments")
-      .then((res) => res.json())
-      .then((data) => {
-        if (data.error) return Promise.reject(new Error(data.error));
-        setStatus(data);
-        setCurrency(data.sellingCurrency ?? "USD");
+    Promise.all([
+      fetch("/api/admin/payments").then((res) => res.json()),
+      fetch("/api/admin/store-currency").then((res) => res.json()),
+    ])
+      .then(([paymentsData, currencyData]) => {
+        if (paymentsData.error) return Promise.reject(new Error(paymentsData.error));
+        setStatus(paymentsData);
+        // The store's own setting, not the engine's — tenant_settings.base_currency defaults to
+        // USD, so an unconfigured store reads as USD rather than inheriting an external default.
+        setCurrency(currencyData.storeCurrency ?? "USD");
       })
       .catch((err) => setError(err instanceof Error ? err.message : "Could not load payment settings"));
   }, []);
 
-  /** Saves through the same engine settings endpoint the dropship settings page uses. */
+  /**
+   * Saves the store's own selling currency, which the server then pushes to the dropship engine's
+   * import target so future imports are quoted in it. An unreachable engine doesn't fail the save
+   * — the local value is the source of truth — but it is reported, since imports would keep
+   * arriving in the old currency until it syncs.
+   */
   async function saveCurrency(next: string) {
     setCurrency(next);
     setSavingCurrency(true);
     setError(null);
     try {
-      const current = await fetch("/api/admin/settings").then((r) => r.json());
-      if (current.error) throw new Error(current.error);
-      const res = await fetch("/api/admin/settings", {
+      const res = await fetch("/api/admin/store-currency", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...current.settings, import: { ...current.settings.import, targetCurrency: next } }),
+        body: JSON.stringify({ currency: next }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(typeof data.error === "string" ? data.error : "Could not save the currency");
       setStatus((prev) => (prev ? { ...prev, sellingCurrency: next } : prev));
       setCurrencySavedAt(new Date().toLocaleTimeString());
+      if (!data.engineSynced) {
+        setError(
+          `Saved ${next} for this store, but the dropship engine didn't pick it up${data.engineError ? ` (${data.engineError})` : ""} — imported products will keep arriving in the old currency until it syncs.`,
+        );
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not save the currency");
     } finally {
@@ -188,24 +200,30 @@ export default function PaymentsSettingsPage() {
         <div className="text-sm space-y-2">
           {status.storeCurrency && (
             <p className="text-stone-600">
-              Existing product prices are stored in <span className="font-medium">{status.storeCurrency}</span>. Change
-              an individual product&rsquo;s currency in its{" "}
+              Products already in the catalogue are priced in{" "}
+              <span className="font-medium">{status.storeCurrency}</span>. Change one product&rsquo;s price or currency
+              in its{" "}
               <Link href="/admin/products" className="underline">
                 editor
               </Link>
-              .
+              , or relabel the whole catalogue at once from that same screen.
             </p>
           )}
         </div>
         <p className="text-xs text-stone-500 mt-3">
-          Charge customers in the same currency your products are priced in. Changing the selling currency affects
-          products imported from then on — it does not re-price products already in the catalogue.
+          New stores sell in USD until you change it here. Charge customers in the same currency your products are
+          priced in: this setting decides what imported products are quoted in from now on — it does not re-price
+          products already in the catalogue.
         </p>
         {currency && status.storeCurrency && currency !== status.storeCurrency && (
           <p className="text-sm text-amber-700 mt-3">
             Your selling currency ({currency}) differs from the currency existing products are priced in (
             {status.storeCurrency}). New imports will be priced in {currency}, leaving the catalogue mixed — and a cart
-            can only be charged in one currency, so checkout refuses baskets that mix them.
+            can only be charged in one currency, so checkout refuses baskets that mix them.{" "}
+            <Link href="/admin/products" className="underline">
+              Fix the catalogue
+            </Link>
+            .
           </p>
         )}
       </section>
