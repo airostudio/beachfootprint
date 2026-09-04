@@ -194,9 +194,14 @@ async function upsertStagedRow(
     .neq("status", "confirmed")
     .maybeSingle();
 
+  // New rows publish on confirm. The staging queue IS the review gate — a product reaching it has
+  // been fetched, priced and rewritten, and confirming is the deliberate "put this in my store"
+  // step — so landing it as a DRAFT nothing shows meant onboarding silently produced an invisible
+  // product. The editor's publish toggle still allows staging without publishing, and is only
+  // defaulted here on insert so re-staging never overrides a choice already made on the row.
   const query = existing
     ? supabase.from("aliexpress_staged_products").update(values).eq("id", existing.id as string)
-    : supabase.from("aliexpress_staged_products").insert({ ...values, tenant_id: tenantId });
+    : supabase.from("aliexpress_staged_products").insert({ publish: true, ...values, tenant_id: tenantId });
 
   const { data, error } = await query.select(SELECT_COLUMNS).single();
   if (error || !data) throw new Error(`Could not stage product: ${error?.message}`);
