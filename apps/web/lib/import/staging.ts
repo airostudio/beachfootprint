@@ -200,5 +200,27 @@ async function upsertStagedRow(
 
   const { data, error } = await query.select(SELECT_COLUMNS).single();
   if (error || !data) throw new Error(`Could not stage product: ${error?.message}`);
-  return rowToStagedProduct(data as unknown as Record<string, unknown>);
+  const staged = rowToStagedProduct(data as unknown as Record<string, unknown>);
+
+  // Read the row back through exactly the filter the staging queue lists with (tenant +
+  // not-confirmed). The write above can succeed and still leave nothing for the admin to find —
+  // e.g. if it landed under a different tenant than the one being viewed — and reporting
+  // "staged" for a row the queue can't see is what makes this fail silently. Better to fail the
+  // request loudly, naming the tenant, than to claim a success the next screen contradicts.
+  const { data: visible, error: verifyError } = await supabase
+    .from("aliexpress_staged_products")
+    .select("id")
+    .eq("tenant_id", tenantId)
+    .eq("id", staged.id)
+    .neq("status", "confirmed")
+    .maybeSingle();
+  if (verifyError) throw new Error(`Staged product ${staged.id} could not be verified: ${verifyError.message}`);
+  if (!visible) {
+    throw new Error(
+      `Staged product ${staged.id} was written but is not visible in the staging queue for tenant ${tenantId} — ` +
+        `it will not appear for review. Check that this deployment's DEFAULT_TENANT_SLUG matches the tenant the queue reads.`,
+    );
+  }
+
+  return staged;
 }
