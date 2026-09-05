@@ -2,6 +2,17 @@ import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { ensureCategoriesExist } from "./categories";
 import { linkToNewArrivals } from "./newArrivalsLink";
+import { parseImageUrls } from "./imageUrls";
+import { rehostImages, type ImageFetchCredentials } from "./rehostImages";
+
+export interface ImportImageOptions {
+  /** Copy source images into this store's own public bucket instead of linking to them. */
+  rehost?: boolean;
+  /** Sent as HTTP Basic auth when the image host requires a login. Never persisted. */
+  credentials?: ImageFetchCredentials | null;
+  /** Wall-clock budget for image fetching in this chunk, so a slow host can't blow the invocation. */
+  deadline?: number;
+}
 
 /**
  * Maps one CSV data row (after header zip) into the columns the product
@@ -77,6 +88,7 @@ export async function upsertProductRows(
   supabase: SupabaseClient,
   tenantId: string,
   records: { rowNumber: number; data: ProductCsvRecord }[],
+  imageOptions?: ImportImageOptions,
 ): Promise<ImportChunkResult> {
   const errors: ImportRowError[] = [];
   const valid: { rowNumber: number; data: ProductCsvRecord; handle: string; priceCents: number }[] = [];
@@ -215,8 +227,8 @@ export async function upsertProductRows(
     if (specErr) errors.push({ rowNumber: -1, message: `Spec insert failed for chunk: ${specErr.message}` });
   }
 
-  // 5) Product imagery — expects already-hosted URLs (run tools/*/upload-images
-  // before importing if source images need to be re-hosted in our own storage first).
+  // 5) Product imagery. Unusable links are dropped with a reason rather than stored: a URL that
+  // can't load is a permanently broken image on the storefront, and it must never cost the row.
   const wantsImages = toInsert.filter((v) => v.data.image_urls?.trim());
   if (wantsImages.length > 0) {
     const productIds = wantsImages.map((v) => productIdByHandle.get(v.handle)).filter((id): id is string => Boolean(id));
@@ -224,12 +236,44 @@ export async function upsertProductRows(
       // Re-imports replace the gallery for these products rather than appending duplicates.
       await supabase.from("product_media").delete().in("product_id", productIds);
     }
+
+    const parsedByHandle = new Map<string, ReturnType<typeof parseImageUrls>>();
+    for (const v of wantsImages) {
+      const parsed = parseImageUrls(v.data.image_urls);
+      parsedByHandle.set(v.handle, parsed);
+      for (const bad of parsed.rejected) {
+        errors.push({ rowNumber: v.rowNumber, handle: v.handle, message: `Image skipped (${bad.reason}): ${bad.value}` });
+      }
+    }
+
+    // When re-hosting is on, copy the bytes into our own public bucket — the source may be behind
+    // a login or plain http, neither of which a customer's browser can load.
+    let rehosted = new Map<string, string>();
+    if (imageOptions?.rehost) {
+      const allUrls = [...new Set([...parsedByHandle.values()].flatMap((p) => p.urls))];
+      const outcome = await rehostImages(supabase, tenantId, allUrls, {
+        credentials: imageOptions.credentials ?? null,
+        deadline: imageOptions.deadline ?? Date.now() + 25_000,
+      });
+      rehosted = outcome.rehosted;
+      for (const [handle, parsed] of parsedByHandle) {
+        const row = wantsImages.find((v) => v.handle === handle);
+        for (const failure of outcome.failures.filter((f) => parsed.urls.includes(f.url))) {
+          errors.push({ rowNumber: row?.rowNumber ?? -1, handle, message: `Image skipped (${failure.reason}): ${failure.url}` });
+        }
+      }
+    }
+
     const mediaRows: { product_id: string; url: string; alt: string; position: number }[] = [];
     for (const v of wantsImages) {
       const productId = productIdByHandle.get(v.handle);
       if (!productId) continue;
-      const urls = v.data.image_urls!.split(/[|,]/).map((u) => u.trim()).filter(Boolean);
-      urls.forEach((url, i) => mediaRows.push({ product_id: productId, url, alt: v.data.title?.trim() ?? v.handle, position: i }));
+      const parsed = parsedByHandle.get(v.handle);
+      if (!parsed) continue;
+      const usable = imageOptions?.rehost
+        ? parsed.urls.map((u) => rehosted.get(u)).filter((u): u is string => Boolean(u))
+        : parsed.urls;
+      usable.forEach((url, i) => mediaRows.push({ product_id: productId, url, alt: v.data.title?.trim() ?? v.handle, position: i }));
     }
     if (mediaRows.length > 0) {
       const { error: mediaErr } = await supabase.from("product_media").insert(mediaRows);
