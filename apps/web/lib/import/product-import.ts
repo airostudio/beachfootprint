@@ -2,7 +2,7 @@ import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { ensureCategoriesExist } from "./categories";
 import { linkToNewArrivals } from "./newArrivalsLink";
-import { parseImageUrls } from "./imageUrls";
+import { isDisplayableImageUrl, parseImageUrls } from "./imageUrls";
 import { rehostImages, type ImageFetchCredentials } from "./rehostImages";
 
 export interface ImportImageOptions {
@@ -270,9 +270,22 @@ export async function upsertProductRows(
       if (!productId) continue;
       const parsed = parsedByHandle.get(v.handle);
       if (!parsed) continue;
-      const usable = imageOptions?.rehost
-        ? parsed.urls.map((u) => rehosted.get(u)).filter((u): u is string => Boolean(u))
-        : parsed.urls;
+      // Without re-hosting we can only keep images the storefront can actually render. An http
+      // URL is correct and reachable and still cannot be displayed (see isDisplayableImageUrl),
+      // so it's reported rather than stored as an image that would 400 on every page view.
+      let usable: string[];
+      if (imageOptions?.rehost) {
+        usable = parsed.urls.map((u) => rehosted.get(u)).filter((u): u is string => Boolean(u));
+      } else {
+        usable = parsed.urls.filter((u) => isDisplayableImageUrl(u));
+        for (const url of parsed.urls.filter((u) => !isDisplayableImageUrl(u))) {
+          errors.push({
+            rowNumber: v.rowNumber,
+            handle: v.handle,
+            message: `Image skipped (http images can't be displayed — turn on "Copy images into this store" to import it): ${url}`,
+          });
+        }
+      }
       usable.forEach((url, i) => mediaRows.push({ product_id: productId, url, alt: v.data.title?.trim() ?? v.handle, position: i }));
     }
     if (mediaRows.length > 0) {

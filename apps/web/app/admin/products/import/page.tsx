@@ -79,7 +79,9 @@ export default function ProductImportPage() {
   // A chosen CSV waits here while the admin confirms which of its headings feed which field.
   // Image-host login, held in this page only for the life of the import and sent with each chunk.
   // Deliberately never stored: it's a third party's password, and nothing here needs it afterwards.
-  const [rehostImages, setRehostImages] = useState(false);
+  // On by default: a source image that isn't https can't be displayed at all if we merely link to
+  // it, and most supplier/WooCommerce exports point at http or login-protected hosts.
+  const [rehostImages, setRehostImages] = useState(true);
   const [imageUsername, setImageUsername] = useState("");
   const [imagePassword, setImagePassword] = useState("");
 

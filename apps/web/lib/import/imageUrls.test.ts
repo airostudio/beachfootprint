@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { MAX_IMAGES_PER_PRODUCT, parseImageUrls, storagePathForImage } from "./imageUrls";
+import { MAX_IMAGES_PER_PRODUCT, isDisplayableImageUrl, parseImageUrls, storagePathForImage } from "./imageUrls";
 
 describe("parseImageUrls", () => {
   it("returns nothing for a missing or empty cell", () => {
@@ -74,5 +74,22 @@ describe("storagePathForImage", () => {
 
   it("gives different sources different paths", () => {
     expect(storagePathForImage("t", "https://a.test/1.jpg")).not.toBe(storagePathForImage("t", "https://a.test/2.jpg"));
+  });
+});
+
+describe("isDisplayableImageUrl", () => {
+  it("accepts https, which is all remotePatterns allows", () => {
+    expect(isDisplayableImageUrl("https://a.test/photo.jpg")).toBe(true);
+  });
+
+  it("rejects http — the case behind INVALID_IMAGE_OPTIMIZE_REQUEST", () => {
+    // Correct, reachable, and still undisplayable: the optimizer refuses it, and a browser would
+    // block it as mixed content on an https page even if the optimizer didn't.
+    expect(isDisplayableImageUrl("http://windsoraws.dyndns.info/web_images/a.jpg")).toBe(false);
+  });
+
+  it("rejects anything that isn't a URL at all", () => {
+    expect(isDisplayableImageUrl("")).toBe(false);
+    expect(isDisplayableImageUrl("product1.jpg")).toBe(false);
   });
 });

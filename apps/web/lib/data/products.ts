@@ -1,6 +1,7 @@
 import "server-only";
 import { db, getTenantId } from "./client";
 import { NEW_ARRIVALS_HANDLE, newArrivalsCutoffIso } from "../newArrivals";
+import { isDisplayableImageUrl } from "../import/imageUrls";
 import type { ProductDetail, ProductSpecGroup, ProductSummary, ProductType, ProductVariantSummary } from "../types";
 
 const PRODUCT_TYPE_MAP: Record<string, ProductType> = {
@@ -79,7 +80,12 @@ async function hydrate(productIds: string[]): Promise<Hydrated> {
     }
   }
 
-  const mediaRows = (mediaRes.data ?? []) as { product_id: string; url: string; alt: string | null }[];
+  // Anything the image optimizer would reject is dropped here rather than handed to next/image,
+  // which answers INVALID_IMAGE_OPTIMIZE_REQUEST and breaks the whole page. This also covers rows
+  // imported before that was validated at write time.
+  const mediaRows = ((mediaRes.data ?? []) as { product_id: string; url: string; alt: string | null }[]).filter((row) =>
+    isDisplayableImageUrl(row.url),
+  );
   for (const row of mediaRows) {
     const list = empty.mediaByProduct.get(row.product_id) ?? [];
     list.push({ url: row.url, alt: row.alt });
