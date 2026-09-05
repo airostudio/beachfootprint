@@ -66,6 +66,13 @@ const TABS = ["Details", "Images", "Variants", "Specifications", "SEO"] as const
 // currency (JPY, KRW) would be charged 100x under that model.
 const CURRENCIES = ["USD", "AUD", "NZD", "GBP", "EUR", "CAD", "SGD"];
 
+const STATUS_BADGE: Record<string, string> = {
+  PUBLISHED: "bg-green-100 text-green-800",
+  DRAFT: "bg-amber-100 text-amber-800",
+  ARCHIVED: "bg-stone-200 text-stone-600",
+  OUT_OF_STOCK: "bg-red-100 text-red-700",
+};
+
 function formatMoney(cents: number | null, currency: string): string {
   if (cents === null || cents === undefined) return "—";
   return new Intl.NumberFormat("en-US", { style: "currency", currency: currency || "USD" }).format(cents / 100);
@@ -260,6 +267,63 @@ export default function ProductEditorPage({ params }: { params: { id: string } }
         </p>
       )}
 
+      {/* Above the tabs on purpose: status, publishing and categories are what an admin comes to
+          this page to change after an import, and they were previously buried inside one tab. */}
+      <div className="border border-stone-200 p-5 mb-6 space-y-4">
+        <div className="flex flex-wrap items-center gap-4">
+          <span className={`text-xs tracking-widest2 uppercase px-2 py-1 ${STATUS_BADGE[product.status] ?? "bg-stone-100 text-stone-600"}`}>
+            {product.status.replace(/_/g, " ")}
+          </span>
+          <label className="flex items-center gap-2 text-sm cursor-pointer">
+            <input
+              type="checkbox"
+              checked={product.status === "PUBLISHED"}
+              onChange={(e) => update({ status: e.target.checked ? "PUBLISHED" : "DRAFT" })}
+            />
+            <span>
+              Published <span className="text-stone-500">— visible on the storefront</span>
+            </span>
+          </label>
+          {product.status !== "PUBLISHED" && product.status !== "DRAFT" && (
+            <span className="text-xs text-stone-500">
+              Unticking returns this to Draft. Use the Status field under Details for {product.status.replace(/_/g, " ").toLowerCase()}.
+            </span>
+          )}
+        </div>
+
+        <div>
+          <p className="text-xs text-stone-500 mb-2">Categories</p>
+          {categories.length === 0 ? (
+            <Link href="/admin/categories" className="text-xs underline">
+              Create a category first
+            </Link>
+          ) : (
+            <div className="flex flex-wrap gap-x-5 gap-y-2">
+              {categories.map((c) => (
+                <label key={c.id} className="flex items-center gap-2 text-sm cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={categoryIds.includes(c.id)}
+                    onChange={() => {
+                      setCategoryIds((ids) => (ids.includes(c.id) ? ids.filter((i) => i !== c.id) : [...ids, c.id]));
+                      touch();
+                    }}
+                  />
+                  <span>{c.name}</span>
+                </label>
+              ))}
+            </div>
+          )}
+          {categories.length > 0 && categoryIds.length === 0 && (
+            <p className="text-xs text-amber-700 mt-2">
+              Not in any category — customers can only reach this product by direct link. Tick at least one.
+            </p>
+          )}
+        </div>
+
+        {dirty && <p className="text-xs text-stone-500">Unsaved — use Save changes above.</p>}
+      </div>
+
       <div className="flex gap-2 mb-6 border-b border-stone-200">
         {TABS.map((t) => (
           <button
@@ -344,32 +408,6 @@ export default function ProductEditorPage({ params }: { params: { id: string } }
             <span className="block text-xs text-stone-500 mb-1">Care instructions</span>
             <textarea value={product.care_instructions ?? ""} onChange={(e) => update({ care_instructions: e.target.value })} rows={3} className="w-full border border-stone-300 px-3 py-2 text-sm" />
           </label>
-
-          <div>
-            <p className="text-xs text-stone-500 mb-2">Categories</p>
-            <div className="flex flex-wrap gap-2">
-              {categories.map((c) => {
-                const on = categoryIds.includes(c.id);
-                return (
-                  <button
-                    key={c.id}
-                    onClick={() => {
-                      setCategoryIds((ids) => (on ? ids.filter((i) => i !== c.id) : [...ids, c.id]));
-                      touch();
-                    }}
-                    className={`text-xs px-3 py-1.5 border ${on ? "border-ink-950 bg-ink-950 text-warm-50" : "border-stone-300 text-stone-500"}`}
-                  >
-                    {c.name}
-                  </button>
-                );
-              })}
-              {categories.length === 0 && (
-                <Link href="/admin/categories" className="text-xs underline">
-                  Create a category first
-                </Link>
-              )}
-            </div>
-          </div>
 
           <div className="pt-6 border-t border-stone-200">
             <button className="text-xs underline text-red-600" disabled={saving} onClick={remove}>

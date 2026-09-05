@@ -124,7 +124,9 @@ export default function ProductsTable({
                 />
               </td>
               <td className="py-2">
-                <Link href={`/admin/products/${p.id}`} className="hover:underline">
+                {/* The name is the way into the editor — underlined so it reads as a link rather
+                    than only revealing itself on hover. */}
+                <Link href={`/admin/products/${p.id}`} className="underline decoration-stone-300 hover:decoration-ink-950">
                   {p.title}
                 </Link>
               </td>
