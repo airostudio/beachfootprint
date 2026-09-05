@@ -43,13 +43,15 @@ export async function POST(request: Request, { params }: { params: { id: string 
     if (!body.productId) return NextResponse.json({ error: "productId is required" }, { status: 400 });
 
     const supabase = createServiceRoleSupabaseClient();
-    if (body.action === "remove") {
-      await supabase.from("product_categories").delete().eq("category_id", params.id).eq("product_id", body.productId);
-    } else {
-      await supabase
-        .from("product_categories")
-        .upsert({ category_id: params.id, product_id: body.productId }, { onConflict: "product_id,category_id" });
-    }
+    // Checked rather than discarded: reporting a write as done when it failed is how a product
+    // ends up looking filed under a category it was never actually linked to.
+    const { error } =
+      body.action === "remove"
+        ? await supabase.from("product_categories").delete().eq("category_id", params.id).eq("product_id", body.productId)
+        : await supabase
+            .from("product_categories")
+            .upsert({ category_id: params.id, product_id: body.productId }, { onConflict: "product_id,category_id" });
+    if (error) throw new Error(error.message);
     return NextResponse.json({ ok: true });
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "Could not update" }, { status: 500 });
