@@ -2,6 +2,12 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import {
+  PRODUCT_IMPORT_FIELDS,
+  parseHeaderRow,
+  suggestColumnMapping,
+  REQUIRED_IMPORT_FIELDS,
+} from "@/lib/import/columnMapping";
 
 type Mode = "csv" | "woocommerce" | "aliexpress";
 type Phase = "idle" | "uploading" | "processing" | "done" | "error";
@@ -69,6 +75,10 @@ export default function ProductImportPage() {
   const [errors, setErrors] = useState<ImportRowError[]>([]);
   const [message, setMessage] = useState<string | null>(null);
   const [summary, setSummary] = useState<ConversionSummary | null>(null);
+
+  // A chosen CSV waits here while the admin confirms which of its headings feed which field.
+  const [pendingCsv, setPendingCsv] = useState<{ file: File; headers: string[] } | null>(null);
+  const [fieldMap, setFieldMap] = useState<Record<string, string | null>>({});
 
   const [aliexpressInput, setAliexpressInput] = useState("");
   const [aliexpressSearch, setAliexpressSearch] = useState("");
@@ -162,12 +172,42 @@ export default function ProductImportPage() {
       .catch(() => undefined);
   }
 
+  // Required fields still unmapped block the import; everything else is the admin's call.
+  const missingRequired = REQUIRED_IMPORT_FIELDS.filter((key) => !fieldMap[key]).map(
+    (key) => PRODUCT_IMPORT_FIELDS.find((f) => f.key === key)?.label ?? key,
+  );
+  const mappedHeaders = new Set(Object.values(fieldMap).filter((h): h is string => Boolean(h)));
+  const unmappedHeaders = (pendingCsv?.headers ?? []).filter((h) => !mappedHeaders.has(h));
+
   const stagedOk = bulkLines.filter((l) => l.status === "staged").length;
   const stagedFailed = bulkLines.filter((l) => l.status === "failed").length;
   const pastedCount = aliexpressInput.split("\n").map((l) => l.trim()).filter(Boolean).length;
 
-  async function runImport(file: File) {
+  /**
+   * Reads just the heading row and proposes a mapping, so the admin can correct it before a single
+   * row is imported. Only the first slice of the file is read — a large export never has to be
+   * pulled into memory to find out what its columns are called.
+   */
+  async function prepareCsvMapping(file: File) {
+    setMessage(null);
+    setSummary(null);
+    setErrors([]);
+    try {
+      const headers = parseHeaderRow(await file.slice(0, 64 * 1024).text());
+      if (headers.length === 0) {
+        setMessage("That file doesn't have a readable header row — the first line should name the columns.");
+        return;
+      }
+      setPendingCsv({ file, headers });
+      setFieldMap(suggestColumnMapping(headers));
+    } catch {
+      setMessage("Could not read that file's header row.");
+    }
+  }
+
+  async function runImport(file: File, columnMap?: Record<string, string | null>) {
     const config = MODE_CONFIG[mode];
+    setPendingCsv(null);
     setPhase("uploading");
     setProgress(0);
     setProcessedRows(0);
@@ -199,7 +239,7 @@ export default function ProductImportPage() {
       const createRes = await fetch(config.createEndpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ path, markMissingOutOfStock }),
+        body: JSON.stringify({ path, markMissingOutOfStock, fieldMap: columnMap }),
       });
       if (!createRes.ok) {
         const body = await createRes.json().catch(() => null);
@@ -400,16 +440,90 @@ export default function ProductImportPage() {
             className="hidden"
             onChange={(e) => {
               const file = e.target.files?.[0];
-              if (file) runImport(file);
+              if (!file) return;
+              // .xlsx is converted to canonical columns server-side, so only CSV needs mapping.
+              if (mode === "csv") prepareCsvMapping(file);
+              else runImport(file);
+              e.target.value = "";
             }}
           />
 
           <button className="btn-primary" disabled={busy} onClick={() => fileInput.current?.click()}>
-            {phase === "idle" && `Choose ${mode === "csv" ? "CSV" : ".xlsx"} File`}
+            {phase === "idle" && !pendingCsv && `Choose ${mode === "csv" ? "CSV" : ".xlsx"} File`}
+            {phase === "idle" && pendingCsv && "Choose a different file"}
             {phase === "uploading" && "Uploading…"}
             {phase === "processing" && "Processing…"}
             {(phase === "done" || phase === "error") && "Import Another File"}
           </button>
+
+          {pendingCsv && (
+            <div className="mt-6 border border-stone-300 p-5">
+              <h3 className="font-serif text-lg mb-1">Match your columns</h3>
+              <p className="text-xs text-stone-600 mb-4">
+                <span className="font-medium">{pendingCsv.file.name}</span> has {pendingCsv.headers.length} column
+                {pendingCsv.headers.length === 1 ? "" : "s"}. These are our best guesses — check them, fix anything
+                wrong, then import. Nothing is read from the file until you do.
+              </p>
+
+              <div className="grid sm:grid-cols-2 gap-x-8 gap-y-3 mb-4">
+                {PRODUCT_IMPORT_FIELDS.map((field) => {
+                  const value = fieldMap[field.key] ?? "";
+                  const needsChoice = field.required && !value;
+                  return (
+                    <label key={field.key} className="text-sm">
+                      <span className="block text-xs mb-1">
+                        {field.label}
+                        {field.required && <span className="text-red-600"> *</span>}
+                        {field.hint && <span className="text-stone-400"> — {field.hint}</span>}
+                      </span>
+                      <select
+                        value={value}
+                        disabled={busy}
+                        onChange={(e) =>
+                          setFieldMap((prev) => ({ ...prev, [field.key]: e.target.value || null }))
+                        }
+                        className={`w-full border px-3 py-2 text-sm ${needsChoice ? "border-red-400" : "border-stone-300"}`}
+                      >
+                        <option value="">— not imported —</option>
+                        {pendingCsv.headers.map((header) => (
+                          <option key={header} value={header}>
+                            {header}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  );
+                })}
+              </div>
+
+              {unmappedHeaders.length > 0 && (
+                <p className="text-xs text-stone-500 mb-4">
+                  Not imported from your file: {unmappedHeaders.join(", ")}. Map a column above if any of these should
+                  come through.
+                </p>
+              )}
+
+              {missingRequired.length > 0 && (
+                <p className="text-xs text-red-600 mb-4">
+                  Choose a column for {missingRequired.join(" and ")} — a row without{" "}
+                  {missingRequired.length === 1 ? "it" : "them"} can&apos;t be imported.
+                </p>
+              )}
+
+              <div className="flex gap-3">
+                <button
+                  className="btn-primary"
+                  disabled={busy || missingRequired.length > 0}
+                  onClick={() => runImport(pendingCsv.file, fieldMap)}
+                >
+                  Import {pendingCsv.file.name}
+                </button>
+                <button className="btn-secondary" disabled={busy} onClick={() => setPendingCsv(null)}>
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
         </>
       )}
 

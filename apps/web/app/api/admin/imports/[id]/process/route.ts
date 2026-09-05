@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createServiceRoleSupabaseClient } from "@trend/db";
 import { parseCsvChunk, zipCsvRow } from "@trend/core";
 import { upsertProductRows, markMissingProductsOutOfStock, type ProductCsvRecord, type ImportRowError } from "@/lib/import/product-import";
+import { applyColumnMapping } from "@/lib/import/columnMapping";
 
 export const runtime = "nodejs";
 // Never prerender or cache an admin endpoint: Next will happily statically optimise a
@@ -82,9 +83,13 @@ export async function POST(_request: Request, { params }: { params: { id: string
     dataRows = parsedRows.slice(1);
   }
 
+  // The admin confirmed which of this file's headings feed which importer field before uploading;
+  // apply that here so the rest of the pipeline only ever sees canonical keys. A job without a
+  // stored mapping treats the file's own headings as canonical, as imports did before mapping.
+  const fieldMap = (job.mapping as { fields?: Record<string, string | null> | null } | null)?.fields ?? null;
   const records = dataRows.map((row, i) => ({
     rowNumber: (result.processedRows ?? 0) + i + 1,
-    data: (header ? zipCsvRow(header, row) : {}) as ProductCsvRecord,
+    data: (header ? applyColumnMapping(zipCsvRow(header, row), fieldMap) : {}) as ProductCsvRecord,
   }));
 
   let chunkOutcome = { processed: 0, errors: [] as ImportRowError[], skippedExisting: 0, seenHandles: [] as string[], seenBrands: [] as string[] };
