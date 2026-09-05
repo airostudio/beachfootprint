@@ -134,42 +134,101 @@ export interface BulkResult {
 /**
  * Deletes selected products.
  *
- * order_items.variant_id is `on delete restrict`, so a product that has ever been ordered cannot
- * be deleted — the constraint exists to stop a past order losing what it was for. That's a real
- * answer, not a failure to work around, so a blocked product is named and left alone while the
- * rest go through, and the admin is pointed at archiving instead.
+ * Two tables reference product_variants with `on delete restrict`, and they mean very different
+ * things:
+ *
+ *  - order_items — a real blocker. The constraint exists so a past order can't lose what it was
+ *    for, and that's the right answer rather than something to work around: the product is named,
+ *    left alone, and the admin is pointed at archiving.
+ *  - cart_items — not a blocker, but it behaves like one. Any shopper (or the admin's own test
+ *    session) leaving a product in a cart pins it forever, and abandoned carts are never cleaned
+ *    up, so a product nobody ever bought becomes undeletable for no reason the admin can see.
+ *    Those lines are cleared first: a cart is a transient draft, and a line for a product that no
+ *    longer exists can't be honoured anyway.
+ *
+ * That distinction is also why this reports the actual reason — the old message blamed past orders
+ * for every failure, including the cart case, which sent admins looking through orders that didn't
+ * exist.
  */
 export async function deleteProducts(ids: string[]): Promise<BulkResult> {
   if (ids.length === 0) return { ok: false, message: "Nothing selected." };
   const tenantId = await getTenantId();
   const supabase = db();
 
-  const { error } = await supabase.from("products").delete().eq("tenant_id", tenantId).in("id", ids);
-  if (!error) {
-    revalidateProductViews();
-    return { ok: true, message: `Deleted ${ids.length} product${ids.length === 1 ? "" : "s"}.` };
+  // Tenant-scoped up front so a stale page can't reach another store's catalogue, and so the
+  // variant lookup below only ever covers products this store owns.
+  const { data: owned, error: ownedError } = await supabase
+    .from("products")
+    .select("id, title")
+    .eq("tenant_id", tenantId)
+    .in("id", ids);
+  if (ownedError) return { ok: false, message: `Could not load products: ${ownedError.message}` };
+  const products = (owned ?? []) as { id: string; title: string }[];
+  if (products.length === 0) return { ok: false, message: "None of those products are in this store." };
+  const titleById = new Map(products.map((p) => [p.id, p.title]));
+  const productIds = products.map((p) => p.id);
+
+  const { data: variants } = await supabase.from("product_variants").select("id, product_id").in("product_id", productIds);
+  const variantRows = (variants ?? []) as { id: string; product_id: string }[];
+  const variantIds = variantRows.map((v) => v.id);
+
+  // Which products a real order depends on — the only genuine blocker, and what makes the message
+  // accurate instead of a guess.
+  const productByVariant = new Map(variantRows.map((v) => [v.id, v.product_id]));
+  const orderedProductIds = new Set<string>();
+  for (let i = 0; i < variantIds.length; i += 200) {
+    const { data: ordered } = await supabase.from("order_items").select("variant_id").in("variant_id", variantIds.slice(i, i + 200));
+    for (const row of (ordered ?? []) as { variant_id: string }[]) {
+      const productId = productByVariant.get(row.variant_id);
+      if (productId) orderedProductIds.add(productId);
+    }
   }
 
-  // One of them is referenced by an order. Retry individually so the others still go, and so the
-  // message can say exactly which ones couldn't.
-  const blocked: string[] = [];
+  // Cleared only for variants that are actually going to be deleted, and only once every order is
+  // accounted for — a blocked product's shoppers keep their basket intact.
+  const clearableVariantIds = variantIds.filter((id) => !orderedProductIds.has(productByVariant.get(id) ?? ""));
+  for (let i = 0; i < clearableVariantIds.length; i += 200) {
+    const { error: cartError } = await supabase.from("cart_items").delete().in("variant_id", clearableVariantIds.slice(i, i + 200));
+    if (cartError) return { ok: false, message: `Could not clear these products from open carts: ${cartError.message}` };
+  }
+
+  const deletable = productIds.filter((id) => !orderedProductIds.has(id));
+  const blocked: string[] = [...orderedProductIds];
   let deleted = 0;
-  for (const id of ids) {
-    const { error: rowError } = await supabase.from("products").delete().eq("tenant_id", tenantId).eq("id", id);
-    if (rowError) blocked.push(id);
-    else deleted += 1;
+
+  for (let i = 0; i < deletable.length; i += 200) {
+    const chunk = deletable.slice(i, i + 200);
+    const { error } = await supabase.from("products").delete().eq("tenant_id", tenantId).in("id", chunk);
+    if (!error) {
+      deleted += chunk.length;
+      continue;
+    }
+    // Something still holds a reference. Retry one at a time so the rest of the batch still goes
+    // and the message can name exactly which ones didn't.
+    for (const id of chunk) {
+      const { error: rowError } = await supabase.from("products").delete().eq("tenant_id", tenantId).eq("id", id);
+      if (rowError) blocked.push(id);
+      else deleted += 1;
+    }
   }
 
   revalidateProductViews();
-  if (blocked.length === 0) return { ok: true, message: `Deleted ${deleted} product${deleted === 1 ? "" : "s"}.` };
 
-  const { data: names } = await supabase.from("products").select("title").in("id", blocked);
-  const titles = ((names ?? []) as { title: string }[]).map((n) => n.title).join(", ");
+  const skipped = ids.length - productIds.length;
+  if (blocked.length === 0) {
+    return {
+      ok: true,
+      message: `Deleted ${deleted} product${deleted === 1 ? "" : "s"}.` + (skipped > 0 ? ` ${skipped} skipped — not in this store.` : ""),
+    };
+  }
+
+  const titles = blocked.map((id) => titleById.get(id) ?? id).join(", ");
   return {
     ok: deleted > 0,
     message:
-      `${deleted} deleted. ${blocked.length} could not be: ${titles || blocked.length + " product(s)"} ` +
-      "appear in past orders, which keeps them from being deleted. Set them to Archived instead — that hides them from the storefront without losing the order history.",
+      `${deleted} deleted. ${blocked.length} could not be: ${titles} ` +
+      "appear in past orders, which keeps them from being deleted so the order history doesn't lose what it was for. " +
+      "Set those to Archived instead — that hides them from the storefront and keeps the orders intact.",
   };
 }
 
