@@ -15,8 +15,8 @@ const columns = [
     title: "Support",
     links: [
       { label: "Contact & Support", href: "/account/support" },
-      { label: "Returns", href: "/guides/fabric-care-101" },
-      { label: "Warranty", href: "/guides/fabric-care-101" },
+      { label: "Returns & Refunds", href: "/legal/returns" },
+      { label: "Shipping & Delivery", href: "/legal/shipping" },
       { label: "Care Assistant", href: "/care" },
       { label: "Compare Products", href: "/compare" },
     ],
@@ -25,8 +25,8 @@ const columns = [
     title: "About",
     links: [
       { label: "Packing Guide", href: "/guides/packing-for-a-coastal-getaway" },
-      { label: "Privacy Policy", href: "/account/privacy" },
-      { label: "Shipping Information", href: "/guides" },
+      { label: "Terms & Conditions", href: "/legal/terms" },
+      { label: "Privacy Policy", href: "/legal/privacy" },
       { label: "Product Finder", href: "/product-finder" },
     ],
   },
