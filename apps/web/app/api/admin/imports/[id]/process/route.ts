@@ -31,6 +31,31 @@ interface JobResult {
 }
 
 const MAX_STORED_ERRORS = 200;
+/**
+ * How long one invocation may spend downloading images before it stops and reports the rest.
+ * Well inside maxDuration so the writes that follow always get to run.
+ */
+const IMAGE_FETCH_BUDGET_MS = 30_000;
+
+/**
+ * Image-host credentials arrive with each call and are used only for that call — never written to
+ * the job row or anywhere else. The admin's browser holds them for the duration of the import,
+ * which keeps a third party's password out of this store's database entirely.
+ */
+interface ImageSettings {
+  rehost: boolean;
+  credentials: { username: string; password: string } | null;
+}
+
+function readImageSettings(body: unknown): ImageSettings {
+  const value = body as { rehostImages?: unknown; imageUsername?: unknown; imagePassword?: unknown } | null;
+  const username = typeof value?.imageUsername === "string" ? value.imageUsername : "";
+  const password = typeof value?.imagePassword === "string" ? value.imagePassword : "";
+  return {
+    rehost: value?.rehostImages === true,
+    credentials: username && password ? { username, password } : null,
+  };
+}
 
 /**
  * Processes ONE bounded byte-range slice of the CSV per call. The caller
@@ -40,7 +65,9 @@ const MAX_STORED_ERRORS = 200;
  * more than `chunkBytes` of the file or running for more than a fraction of
  * a second of real work.
  */
-export async function POST(_request: Request, { params }: { params: { id: string } }) {
+export async function POST(request: Request, { params }: { params: { id: string } }) {
+  const startedAt = Date.now();
+  const imageSettings = readImageSettings(await request.json().catch(() => null));
   const supabase = createServiceRoleSupabaseClient();
 
   const { data: job, error: jobErr } = await supabase.from("import_jobs").select("*").eq("id", params.id).single();
@@ -94,7 +121,12 @@ export async function POST(_request: Request, { params }: { params: { id: string
 
   let chunkOutcome = { processed: 0, errors: [] as ImportRowError[], skippedExisting: 0, seenHandles: [] as string[], seenBrands: [] as string[] };
   if (header && records.length > 0) {
-    chunkOutcome = await upsertProductRows(supabase, job.tenant_id, records);
+    chunkOutcome = await upsertProductRows(supabase, job.tenant_id, records, {
+      rehost: imageSettings.rehost,
+      credentials: imageSettings.credentials,
+      // Leave room inside this invocation's budget for the writes that follow the fetching.
+      deadline: startedAt + IMAGE_FETCH_BUDGET_MS,
+    });
   }
 
   // Determine how far into the file we actually consumed. Bytes actually

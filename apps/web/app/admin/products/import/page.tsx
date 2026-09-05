@@ -77,6 +77,12 @@ export default function ProductImportPage() {
   const [summary, setSummary] = useState<ConversionSummary | null>(null);
 
   // A chosen CSV waits here while the admin confirms which of its headings feed which field.
+  // Image-host login, held in this page only for the life of the import and sent with each chunk.
+  // Deliberately never stored: it's a third party's password, and nothing here needs it afterwards.
+  const [rehostImages, setRehostImages] = useState(false);
+  const [imageUsername, setImageUsername] = useState("");
+  const [imagePassword, setImagePassword] = useState("");
+
   const [pendingCsv, setPendingCsv] = useState<{ file: File; headers: string[] } | null>(null);
   const [fieldMap, setFieldMap] = useState<Record<string, string | null>>({});
 
@@ -255,7 +261,11 @@ export default function ProductImportPage() {
       setPhase("processing");
       let done = false;
       while (!done) {
-        const processRes = await fetch(`/api/admin/imports/${created.id}/process`, { method: "POST" });
+        const processRes = await fetch(`/api/admin/imports/${created.id}/process`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ rehostImages, imageUsername, imagePassword }),
+        });
         if (!processRes.ok) throw new Error("A chunk failed to process");
         const chunk = await processRes.json();
         done = chunk.done;
@@ -433,6 +443,52 @@ export default function ProductImportPage() {
             </span>
           </label>
 
+
+          <div className="mb-6 border border-stone-200 p-4">
+            <label className="flex items-start gap-2 text-xs text-stone-600 cursor-pointer">
+              <input
+                type="checkbox"
+                className="mt-0.5"
+                checked={rehostImages}
+                disabled={busy}
+                onChange={(e) => setRehostImages(e.target.checked)}
+              />
+              <span>
+                <span className="font-medium">Copy images into this store</span> instead of linking to them. Needed
+                when the images sit behind a login, or are served over plain http — a customer&rsquo;s browser can load
+                neither, so linking to them leaves the catalogue full of broken images.
+              </span>
+            </label>
+
+            {rehostImages && (
+              <div className="mt-3 pl-6">
+                <p className="text-xs text-stone-500 mb-2">
+                  If the image host needs a login, enter it here. It is used only to download the images during this
+                  import and is never saved.
+                </p>
+                <div className="flex flex-wrap gap-3">
+                  <input
+                    type="text"
+                    autoComplete="off"
+                    placeholder="Username (optional)"
+                    value={imageUsername}
+                    disabled={busy}
+                    onChange={(e) => setImageUsername(e.target.value)}
+                    className="border border-stone-300 px-3 py-2 text-sm"
+                  />
+                  <input
+                    type="password"
+                    autoComplete="new-password"
+                    placeholder="Password (optional)"
+                    value={imagePassword}
+                    disabled={busy}
+                    onChange={(e) => setImagePassword(e.target.value)}
+                    className="border border-stone-300 px-3 py-2 text-sm"
+                  />
+                </div>
+              </div>
+            )}
+          </div>
           <input
             ref={fileInput}
             type="file"
