@@ -3,21 +3,21 @@ import Link from "next/link";
 import CategoryCard from "@/components/CategoryCard";
 import HeroSlideshow from "@/components/HeroSlideshow";
 import ProductCard from "@/components/ProductCard";
-import { getCategoryByHandle } from "@/lib/data/categories";
+import { getFeatureCategories } from "@/lib/data/categories";
 import { getProductsByCategory } from "@/lib/data/products";
 import { getHeroBanner } from "@/lib/data/cms";
 
 export const dynamic = "force-dynamic";
 
 export default async function HomePage() {
-  const featureCategoryHandles = ["dresses-kimonos", "swim", "accessories", "care", "new-arrivals", "best-sellers"];
-  const [featureCategoriesRaw, newArrivals, bestSellers, heroBanner] = await Promise.all([
-    Promise.all(featureCategoryHandles.map((h) => getCategoryByHandle(h))),
+  // Built from the database, not a fixed handle list, so a category added in admin — or one that
+  // just got its first product — appears here without a code change.
+  const [featureCategories, newArrivals, bestSellers, heroBanner] = await Promise.all([
+    getFeatureCategories(),
     getProductsByCategory("new-arrivals"),
     getProductsByCategory("best-sellers"),
     getHeroBanner(),
   ]);
-  const featureCategories = featureCategoriesRaw.filter((c): c is NonNullable<typeof c> => Boolean(c));
 
   return (
     <div>
@@ -48,7 +48,7 @@ export default async function HomePage() {
         </div>
         <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
           {featureCategories.map((c) => (
-            <CategoryCard key={c.handle} href={`/shop/${c.handle}`} name={c.name} imageUrl={c.heroImageUrl ?? "https://picsum.photos/seed/cat/900/1200"} />
+            <CategoryCard key={c.handle} href={`/shop/${c.handle}`} name={c.name} imageUrl={c.imageUrl} />
           ))}
         </div>
       </section>

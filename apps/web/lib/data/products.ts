@@ -1,5 +1,6 @@
 import "server-only";
 import { db, getTenantId } from "./client";
+import { NEW_ARRIVALS_HANDLE, newArrivalsCutoffIso } from "../newArrivals";
 import type { ProductDetail, ProductSpecGroup, ProductSummary, ProductType, ProductVariantSummary } from "../types";
 
 const PRODUCT_TYPE_MAP: Record<string, ProductType> = {
@@ -225,17 +226,76 @@ export async function getProductsByCategory(handle: string): Promise<ProductSumm
   const { data: category } = await supabase.from("categories").select("id").eq("tenant_id", tenantId).eq("handle", handle).maybeSingle();
   if (!category) return [];
 
-  const { data, error } = await supabase
+  let query = supabase
     .from("products")
     .select(`${PRODUCT_COLUMNS}, product_categories!inner(category_id)`)
     .eq("tenant_id", tenantId)
     .eq("status", "PUBLISHED")
     .eq("product_categories.category_id", category.id);
+
+  // New Arrivals is time-boxed: a product belongs to it for NEW_ARRIVALS_DAYS after it was
+  // created, and the cutoff is applied here rather than waited out by a job, so the listing is
+  // right the instant a product ages out even if the housekeeping sweep hasn't run.
+  if (handle === NEW_ARRIVALS_HANDLE) query = query.gte("created_at", newArrivalsCutoffIso());
+
+  const { data, error } = await query;
   if (error) throw new Error(`Could not load products for category "${handle}": ${error.message}`);
 
   const rows = (data ?? []) as ProductRow[];
   const hydrated = await hydrate(rows.map((r) => r.id));
   return rows.map((r) => toSummary(r, hydrated));
+}
+
+export interface ProductNeedingCategory {
+  id: string;
+  title: string;
+  handle: string;
+}
+
+/**
+ * Products whose only category is New Arrivals, or which have none at all.
+ *
+ * These are the ones that quietly disappear from browsing when they age out of New Arrivals after
+ * NEW_ARRIVALS_DAYS: still published, still buyable by direct link, but in no category anyone can
+ * navigate to. The admin needs to pick a main category for them before that happens, so this backs
+ * an alert rather than being left to be discovered later.
+ */
+export async function getProductsWithoutMainCategory(): Promise<ProductNeedingCategory[]> {
+  const tenantId = await getTenantId();
+  const supabase = db();
+
+  const { data: products, error } = await supabase
+    .from("products")
+    .select("id, title, handle")
+    .eq("tenant_id", tenantId)
+    .neq("status", "ARCHIVED");
+  if (error) throw new Error(`Could not load products: ${error.message}`);
+  const rows = (products ?? []) as ProductNeedingCategory[];
+  if (rows.length === 0) return [];
+
+  const { data: newArrivals } = await supabase
+    .from("categories")
+    .select("id")
+    .eq("tenant_id", tenantId)
+    .eq("handle", NEW_ARRIVALS_HANDLE)
+    .maybeSingle();
+  const newArrivalsId = newArrivals?.id as string | undefined;
+
+  const { data: links } = await supabase
+    .from("product_categories")
+    .select("product_id, category_id")
+    .in(
+      "product_id",
+      rows.map((r) => r.id),
+    );
+
+  const mainCategoryCount = new Map<string, number>();
+  for (const link of ((links ?? []) as { product_id: string; category_id: string }[])) {
+    if (link.category_id === newArrivalsId) continue;
+    mainCategoryCount.set(link.product_id, (mainCategoryCount.get(link.product_id) ?? 0) + 1);
+  }
+
+  return rows.filter((r) => (mainCategoryCount.get(r.id) ?? 0) === 0);
 }
 
 const GENERIC_WHATS_INCLUDED = ["Product", "Care instructions"];

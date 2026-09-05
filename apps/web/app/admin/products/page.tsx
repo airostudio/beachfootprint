@@ -1,17 +1,19 @@
 import Link from "next/link";
-import { getAllProductsForAdmin } from "@/lib/data/products";
+import { getAllProductsForAdmin, getProductsWithoutMainCategory } from "@/lib/data/products";
 import { getStoreCurrency } from "@/lib/data/settings";
 import { countDemoProducts } from "@/lib/data/demoProducts";
 import { formatMoney } from "@/lib/format";
-import { publishAllDrafts, publishProduct, removeDemoProducts, setCatalogueCurrency } from "./actions";
+import { publishAllDrafts, publishProduct, removeDemoProducts, setCatalogueCurrency, sweepNewArrivals } from "./actions";
+import { NEW_ARRIVALS_DAYS } from "@/lib/newArrivals";
 
 export const dynamic = "force-dynamic";
 
 export default async function AdminProductsPage() {
-  const [products, storeCurrency, demoCount] = await Promise.all([
+  const [products, storeCurrency, demoCount, needMainCategory] = await Promise.all([
     getAllProductsForAdmin(),
     getStoreCurrency(),
     countDemoProducts(),
+    getProductsWithoutMainCategory(),
   ]);
   const draftCount = products.filter((p) => p.status === "DRAFT").length;
 
@@ -38,6 +40,11 @@ export default async function AdminProductsPage() {
               </button>
             </form>
           )}
+          <form action={sweepNewArrivals}>
+            <button type="submit" className="btn-secondary" title={`Clear New Arrivals for products older than ${NEW_ARRIVALS_DAYS} days`}>
+              Tidy New Arrivals
+            </button>
+          </form>
           <Link href="/admin/products/import" className="btn-secondary">
             Import Products
           </Link>
@@ -67,6 +74,29 @@ export default async function AdminProductsPage() {
         </span>
         {unpriced > 0 && <span className="text-red-600">{unpriced} with no price</span>}
       </div>
+      {needMainCategory.length > 0 && (
+        <div className="border border-amber-600 bg-amber-50 px-4 py-3 mb-4 text-xs">
+          <p className="mb-2">
+            <span className="font-medium">
+              {needMainCategory.length} product{needMainCategory.length === 1 ? "" : "s"} need
+              {needMainCategory.length === 1 ? "s" : ""} a main category
+            </span>{" "}
+            — {needMainCategory.length === 1 ? "it is" : "they are"} only in New Arrivals, which every product leaves{" "}
+            {NEW_ARRIVALS_DAYS} days after it&rsquo;s created. Once that happens{" "}
+            {needMainCategory.length === 1 ? "it" : "they"} will still be published and buyable by direct link, but in
+            no category a customer can browse to.
+          </p>
+          <ul className="flex flex-wrap gap-x-4 gap-y-1">
+            {needMainCategory.map((p) => (
+              <li key={p.id}>
+                <Link href={`/admin/products/${p.id}`} className="underline">
+                  {p.title}
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
       {demoCount > 0 && (
         <div className="border border-amber-600 bg-amber-50 px-4 py-3 mb-4 text-xs">
           <p className="mb-2">

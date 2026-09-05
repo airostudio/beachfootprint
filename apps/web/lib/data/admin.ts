@@ -56,6 +56,18 @@ export async function getDashboardKpis(): Promise<DashboardKpis> {
   };
 }
 
+/** The jsonb snapshot checkout writes to orders.shipping_address — what was actually shipped to. */
+export interface OrderAddress {
+  fullName?: string | null;
+  line1?: string | null;
+  line2?: string | null;
+  city?: string | null;
+  region?: string | null;
+  postalCode?: string | null;
+  country?: string | null;
+  phone?: string | null;
+}
+
 export interface AdminOrderSummary {
   id: string;
   createdAt: string;
@@ -64,6 +76,9 @@ export interface AdminOrderSummary {
   totalCents: number;
   currency: string;
   customerEmail: string | null;
+  customerName: string | null;
+  customerPhone: string | null;
+  shippingAddress: OrderAddress | null;
   itemCount: number;
   trackingNumber: string | null;
   aliexpressOrderId: string | null;
@@ -81,7 +96,9 @@ export async function getAdminOrders(limit = 200): Promise<AdminOrderSummary[]> 
 
   const { data, error } = await supabase
     .from("orders")
-    .select("id, created_at, status, fulfillment_status, total, currency, customer_id, tracking_number, aliexpress_order_id")
+    .select(
+      "id, created_at, status, fulfillment_status, total, currency, customer_id, shipping_address, tracking_number, aliexpress_order_id",
+    )
     .eq("tenant_id", tenantId)
     .order("created_at", { ascending: false })
     .limit(limit);
@@ -95,6 +112,7 @@ export async function getAdminOrders(limit = 200): Promise<AdminOrderSummary[]> 
     total: number;
     currency: string;
     customer_id: string | null;
+    shipping_address: unknown;
     tracking_number: string | null;
     aliexpress_order_id: string | null;
   }
@@ -107,8 +125,8 @@ export async function getAdminOrders(limit = 200): Promise<AdminOrderSummary[]> 
   const [{ data: itemRows }, { data: customerRows }, { data: shortfallRows }] = await Promise.all([
     supabase.from("order_items").select("order_id, quantity").in("order_id", orderIds),
     customerIds.length > 0
-      ? supabase.from("customers").select("id, email").in("id", customerIds)
-      : Promise.resolve({ data: [] as { id: string; email: string }[] }),
+      ? supabase.from("customers").select("id, email, name, phone").in("id", customerIds)
+      : Promise.resolve({ data: [] as { id: string; email: string; name: string | null; phone: string | null }[] }),
     supabase.from("fulfillment_logs").select("order_id").eq("event", "stock_shortfall").in("order_id", orderIds),
   ]);
 
@@ -116,20 +134,157 @@ export async function getAdminOrders(limit = 200): Promise<AdminOrderSummary[]> 
   for (const item of ((itemRows ?? []) as { order_id: string; quantity: number }[])) {
     itemsByOrder.set(item.order_id, (itemsByOrder.get(item.order_id) ?? 0) + item.quantity);
   }
-  const emailByCustomer = new Map(((customerRows ?? []) as { id: string; email: string }[]).map((c) => [c.id, c.email]));
+  const customerById = new Map(
+    ((customerRows ?? []) as { id: string; email: string; name: string | null; phone: string | null }[]).map((c) => [c.id, c]),
+  );
   const shortfallOrderIds = new Set(((shortfallRows ?? []) as { order_id: string }[]).map((r) => r.order_id));
 
-  return rows.map((r) => ({
-    id: r.id,
-    createdAt: r.created_at,
-    status: r.status,
-    fulfillmentStatus: r.fulfillment_status,
-    totalCents: r.total,
-    currency: r.currency,
-    customerEmail: r.customer_id ? (emailByCustomer.get(r.customer_id) ?? null) : null,
-    itemCount: itemsByOrder.get(r.id) ?? 0,
-    trackingNumber: r.tracking_number,
-    aliexpressOrderId: r.aliexpress_order_id,
-    hasStockShortfall: shortfallOrderIds.has(r.id),
-  }));
+  return rows.map((r) => {
+    const customer = r.customer_id ? customerById.get(r.customer_id) : undefined;
+    const address = (r.shipping_address ?? null) as OrderAddress | null;
+    return {
+      id: r.id,
+      createdAt: r.created_at,
+      status: r.status,
+      fulfillmentStatus: r.fulfillment_status,
+      totalCents: r.total,
+      currency: r.currency,
+      customerEmail: customer?.email ?? null,
+      customerName: customer?.name ?? address?.fullName ?? null,
+      customerPhone: customer?.phone ?? address?.phone ?? null,
+      shippingAddress: address,
+      itemCount: itemsByOrder.get(r.id) ?? 0,
+      trackingNumber: r.tracking_number,
+      aliexpressOrderId: r.aliexpress_order_id,
+      hasStockShortfall: shortfallOrderIds.has(r.id),
+    };
+  });
+}
+
+export interface AdminOrderItem {
+  title: string;
+  sku: string | null;
+  quantity: number;
+  unitPriceCents: number;
+  lineTotalCents: number;
+}
+
+export interface AdminOrderPayment {
+  provider: string;
+  providerRef: string;
+  status: string;
+  amountCents: number;
+  createdAt: string;
+}
+
+export interface AdminOrderEvent {
+  event: string;
+  detail: unknown;
+  supplierOrderId: string | null;
+  createdAt: string;
+}
+
+export interface AdminOrderDetail extends AdminOrderSummary {
+  subtotalCents: number;
+  taxCents: number;
+  shippingCents: number;
+  discountCents: number;
+  carrier: string | null;
+  fulfilledAt: string | null;
+  shippedAt: string | null;
+  items: AdminOrderItem[];
+  payments: AdminOrderPayment[];
+  events: AdminOrderEvent[];
+}
+
+/** One order with everything an admin needs to act on it: what was bought, who by, what was paid, and what fulfillment has done since. */
+export async function getAdminOrder(id: string): Promise<AdminOrderDetail | null> {
+  const tenantId = await getTenantId();
+  const supabase = db();
+
+  const { data: order, error } = await supabase
+    .from("orders")
+    .select(
+      "id, created_at, status, fulfillment_status, subtotal, tax_total, shipping_total, discount_total, total, currency, " +
+        "customer_id, shipping_address, tracking_number, carrier, aliexpress_order_id, fulfilled_at, shipped_at",
+    )
+    .eq("tenant_id", tenantId)
+    .eq("id", id)
+    .maybeSingle();
+  if (error) throw new Error(`Could not load order: ${error.message}`);
+  if (!order) return null;
+
+  interface OrderDetailRow {
+    id: string;
+    created_at: string;
+    status: string;
+    fulfillment_status: string | null;
+    subtotal: number;
+    tax_total: number;
+    shipping_total: number;
+    discount_total: number;
+    total: number;
+    currency: string;
+    customer_id: string | null;
+    shipping_address: unknown;
+    tracking_number: string | null;
+    carrier: string | null;
+    aliexpress_order_id: string | null;
+    fulfilled_at: string | null;
+    shipped_at: string | null;
+  }
+  const row = order as unknown as OrderDetailRow;
+
+  const [{ data: itemRows }, { data: paymentRows }, { data: eventRows }, { data: customer }] = await Promise.all([
+    supabase.from("order_items").select("title, sku, quantity, unit_price, line_total").eq("order_id", id),
+    supabase.from("payments").select("provider, provider_ref, status, amount, created_at").eq("order_id", id).order("created_at"),
+    supabase
+      .from("fulfillment_logs")
+      .select("event, detail, supplier_order_id, created_at")
+      .eq("order_id", id)
+      .order("created_at", { ascending: false }),
+    row.customer_id
+      ? supabase.from("customers").select("email, name, phone").eq("id", row.customer_id).maybeSingle()
+      : Promise.resolve({ data: null }),
+  ]);
+
+  const items = ((itemRows ?? []) as { title: string; sku: string | null; quantity: number; unit_price: number; line_total: number }[]).map(
+    (i) => ({ title: i.title, sku: i.sku, quantity: i.quantity, unitPriceCents: i.unit_price, lineTotalCents: i.line_total }),
+  );
+  const address = (row.shipping_address ?? null) as OrderAddress | null;
+  const person = customer as unknown as { email: string; name: string | null; phone: string | null } | null;
+
+  return {
+    id: row.id,
+    createdAt: row.created_at,
+    status: row.status,
+    fulfillmentStatus: row.fulfillment_status,
+    subtotalCents: row.subtotal,
+    taxCents: row.tax_total,
+    shippingCents: row.shipping_total,
+    discountCents: row.discount_total,
+    totalCents: row.total,
+    currency: row.currency,
+    customerEmail: person?.email ?? null,
+    customerName: person?.name ?? address?.fullName ?? null,
+    customerPhone: person?.phone ?? address?.phone ?? null,
+    shippingAddress: address,
+    itemCount: items.reduce((sum, i) => sum + i.quantity, 0),
+    trackingNumber: row.tracking_number,
+    carrier: row.carrier,
+    aliexpressOrderId: row.aliexpress_order_id,
+    fulfilledAt: row.fulfilled_at,
+    shippedAt: row.shipped_at,
+    hasStockShortfall: ((eventRows ?? []) as { event: string }[]).some((e) => e.event === "stock_shortfall"),
+    items,
+    payments: ((paymentRows ?? []) as { provider: string; provider_ref: string; status: string; amount: number; created_at: string }[]).map(
+      (p) => ({ provider: p.provider, providerRef: p.provider_ref, status: p.status, amountCents: p.amount, createdAt: p.created_at }),
+    ),
+    events: ((eventRows ?? []) as { event: string; detail: unknown; supplier_order_id: string | null; created_at: string }[]).map((e) => ({
+      event: e.event,
+      detail: e.detail,
+      supplierOrderId: e.supplier_order_id,
+      createdAt: e.created_at,
+    })),
+  };
 }

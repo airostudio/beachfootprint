@@ -1,6 +1,7 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { ensureCategoriesExist } from "./categories";
+import { linkToNewArrivals } from "./newArrivalsLink";
 
 /**
  * Maps one CSV data row (after header zip) into the columns the product
@@ -257,6 +258,12 @@ export async function upsertProductRows(
       const { error: catErr } = await supabase.from("product_categories").upsert(links, { onConflict: "product_id,category_id" });
       if (catErr) errors.push({ rowNumber: -1, message: `Category assignment failed for chunk: ${catErr.message}` });
     }
+  }
+
+  // Every product imported in this chunk also joins New Arrivals, whatever categories the file
+  // gave it — it ages out on its own after NEW_ARRIVALS_DAYS (see lib/newArrivals.ts).
+  for (const productId of productIdByHandle.values()) {
+    await linkToNewArrivals(supabase, tenantId, productId);
   }
 
   return { processed: toInsert.length, errors, skippedExisting, seenHandles, seenBrands };

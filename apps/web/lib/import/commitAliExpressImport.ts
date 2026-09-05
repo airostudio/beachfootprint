@@ -2,6 +2,7 @@ import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createMapping } from "@/lib/dropshipEngine";
 import type { StagedProduct } from "@/lib/import/staging";
+import { linkToNewArrivals } from "./newArrivalsLink";
 
 function slugify(value: string): string {
   return value
@@ -165,6 +166,10 @@ export async function commitAliExpressImport(
       .from("product_categories")
       .upsert({ product_id: productId, category_id: staged.categoryId }, { onConflict: "product_id,category_id" });
   }
+
+  // Every new product joins New Arrivals, whatever its main category — it ages out on its own
+  // after NEW_ARRIVALS_DAYS (see lib/newArrivals.ts).
+  if (isNewProduct) await linkToNewArrivals(supabase, params.tenantId, productId);
 
   await supabase.from("fulfillment_logs").insert({
     tenant_id: params.tenantId,
