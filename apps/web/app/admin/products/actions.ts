@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { db, getTenantId } from "@/lib/data/client";
 import { DEMO_PRODUCT_HANDLES } from "@/lib/data/demoProducts";
+import { NEW_ARRIVALS_HANDLE, newArrivalsCutoffIso } from "@/lib/newArrivals";
 
 export async function publishProduct(productId: string): Promise<void> {
   const tenantId = await getTenantId();
@@ -10,6 +11,49 @@ export async function publishProduct(productId: string): Promise<void> {
   if (error) throw new Error(`Could not publish product: ${error.message}`);
   revalidatePath("/admin/products");
   revalidatePath("/admin");
+  revalidatePath("/shop");
+  revalidatePath("/");
+}
+
+/**
+ * Housekeeping for New Arrivals: drops the category link from every product older than
+ * NEW_ARRIVALS_DAYS, so the stored categories match what the storefront shows.
+ *
+ * Nothing depends on this having run — the New Arrivals listing applies the same cutoff when it
+ * reads (see lib/newArrivals.ts), so a product ages out on time whether or not this is ever
+ * called. This just stops the link table accumulating memberships that no longer mean anything.
+ */
+export async function sweepNewArrivals(): Promise<void> {
+  const tenantId = await getTenantId();
+  const supabase = db();
+
+  const { data: category } = await supabase
+    .from("categories")
+    .select("id")
+    .eq("tenant_id", tenantId)
+    .eq("handle", NEW_ARRIVALS_HANDLE)
+    .maybeSingle();
+  const categoryId = category?.id as string | undefined;
+  if (!categoryId) return;
+
+  const { data: expired, error: expiredError } = await supabase
+    .from("products")
+    .select("id")
+    .eq("tenant_id", tenantId)
+    .lt("created_at", newArrivalsCutoffIso());
+  if (expiredError) throw new Error(`Could not find expired new arrivals: ${expiredError.message}`);
+
+  const ids = ((expired ?? []) as { id: string }[]).map((p) => p.id);
+  for (let i = 0; i < ids.length; i += 200) {
+    const { error } = await supabase
+      .from("product_categories")
+      .delete()
+      .eq("category_id", categoryId)
+      .in("product_id", ids.slice(i, i + 200));
+    if (error) throw new Error(`Could not clear expired new arrivals: ${error.message}`);
+  }
+
+  revalidatePath("/admin/products");
   revalidatePath("/shop");
   revalidatePath("/");
 }
