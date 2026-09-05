@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { createServiceRoleSupabaseClient } from "@trend/db";
 import { resolveTenantId } from "@/lib/import/tenant";
+import { PRODUCT_IMPORT_FIELDS } from "@/lib/import/columnMapping";
 
 export const runtime = "nodejs";
 // Never prerender or cache an admin endpoint: Next will happily statically optimise a
@@ -17,6 +18,12 @@ const bodySchema = z.object({
   path: z.string().min(1), // storage path returned by /api/admin/imports/upload-url
   chunkBytes: z.number().int().positive().max(2_000_000).optional(),
   markMissingOutOfStock: z.boolean().optional(),
+  /**
+   * Field key -> the heading that field lives under in this file, as confirmed by the admin in
+   * the mapping step. Omitted for a file whose headings are already the canonical keys, which is
+   * how imports behaved before mapping existed.
+   */
+  fieldMap: z.record(z.string(), z.string().nullable()).optional(),
 });
 
 /** Registers an uploaded CSV as an import job. Processing happens later, one bounded chunk per call to [id]/process. */
@@ -35,11 +42,8 @@ export async function POST(request: Request) {
       status: "QUEUED",
       file_url: parsed.data.path,
       mapping: {
-        columns: [
-          "handle", "title", "product_type", "short_description", "description",
-          "price", "compare_at", "sku", "stock_on_hand", "category_handles",
-          "brand", "material", "height_cm", "status", "image_urls",
-        ],
+        columns: PRODUCT_IMPORT_FIELDS.map((f) => f.key),
+        fields: parsed.data.fieldMap ?? null,
       },
       options: {
         byteOffset: 0,
