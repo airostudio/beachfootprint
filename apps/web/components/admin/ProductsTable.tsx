@@ -31,6 +31,9 @@ export default function ProductsTable({
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
   const [pending, startTransition] = useTransition();
 
+  // The page's labels, which disambiguate two categories that share a name — worth using here
+  // too, so the column and the dropdown agree on what a category is called.
+  const labelById = new Map(categories.map((c) => [c.id, c.name]));
   const allSelected = products.length > 0 && products.every((p) => selected.has(p.id));
   const someSelected = selected.size > 0;
 
@@ -169,7 +172,7 @@ export default function ProductsTable({
               </td>
               <td className="py-2 text-stone-500">
                 {p.mainCategories.length > 0 ? (
-                  p.mainCategories.map((c) => c.name).join(", ")
+                  p.mainCategories.map((c) => labelById.get(c.id) ?? c.name).join(", ")
                 ) : (
                   <span className="text-amber-700" title="Only reachable by direct link — no category to browse it from">
                     none

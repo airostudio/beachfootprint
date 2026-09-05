@@ -230,18 +230,46 @@ export async function setProductsMainCategory(ids: string[], categoryId: string)
     .maybeSingle();
   const newArrivalsId = (newArrivals?.id as string | undefined) ?? null;
 
+  // Add first, then remove. There is no transaction across these two calls, so the order decides
+  // what a half-finished move leaves behind: this way a failure leaves products in both the old
+  // and the new category (visible, fixable), where delete-then-insert would leave them in none —
+  // published but unreachable by browsing, which is exactly the state that's hard to notice.
+  //
   // Chunked because `.in()` becomes a query-string filter, which has a length limit.
+  const attached: string[] = [];
   for (let i = 0; i < productIds.length; i += 200) {
     const chunk = productIds.slice(i, i + 200);
-    let clear = supabase.from("product_categories").delete().in("product_id", chunk);
-    if (newArrivalsId) clear = clear.neq("category_id", newArrivalsId);
-    const { error: clearError } = await clear;
-    if (clearError) return { ok: false, message: `Could not clear the old categories: ${clearError.message}` };
-
     const { error: insertError } = await supabase
       .from("product_categories")
-      .insert(chunk.map((productId) => ({ product_id: productId, category_id: target.id })));
-    if (insertError) return { ok: false, message: `Could not set the category: ${insertError.message}` };
+      .upsert(
+        chunk.map((productId) => ({ product_id: productId, category_id: target.id })),
+        { onConflict: "product_id,category_id" },
+      );
+    if (insertError) {
+      return {
+        ok: attached.length > 0,
+        message:
+          `Added ${attached.length} product${attached.length === 1 ? "" : "s"} to ${target.name}, then stopped: ` +
+          `${insertError.message}. Nothing was removed from its old category.`,
+      };
+    }
+    attached.push(...chunk);
+  }
+
+  for (let i = 0; i < attached.length; i += 200) {
+    const chunk = attached.slice(i, i + 200);
+    let clear = supabase.from("product_categories").delete().in("product_id", chunk).neq("category_id", target.id);
+    if (newArrivalsId) clear = clear.neq("category_id", newArrivalsId);
+    const { error: clearError } = await clear;
+    if (clearError) {
+      revalidateProductViews();
+      return {
+        ok: true,
+        message:
+          `${attached.length} product${attached.length === 1 ? "" : "s"} added to ${target.name}, but the old ` +
+          `categories could not be cleared: ${clearError.message}. They are now in more than one category.`,
+      };
+    }
   }
 
   revalidateProductViews();

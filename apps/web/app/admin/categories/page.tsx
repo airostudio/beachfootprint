@@ -12,6 +12,7 @@ interface Category {
   position: number;
   is_hidden: boolean;
   productCount: number;
+  publishedCount: number;
 }
 
 interface CategoryProduct {
@@ -130,11 +131,17 @@ export default function AdminCategoriesPage() {
   }
 
   async function removeFromCategory(categoryId: string, productId: string) {
-    await fetch(`/api/admin/categories/${categoryId}/products`, {
+    setError(null);
+    const res = await fetch(`/api/admin/categories/${categoryId}/products`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ productId, action: "remove" }),
     });
+    if (!res.ok) {
+      const data = await res.json().catch(() => null);
+      setError(data?.error ?? "Could not remove the product from this category");
+      return;
+    }
     setProductsByCategory((prev) => ({ ...prev, [categoryId]: (prev[categoryId] ?? []).filter((p) => p.id !== productId) }));
     await load();
   }
@@ -243,8 +250,14 @@ export default function AdminCategoriesPage() {
                   {c.description && <p className="text-xs text-stone-500 mt-1">{c.description}</p>}
                 </div>
                 <div className="flex items-center gap-3 flex-shrink-0">
-                  <button className="text-xs underline" onClick={() => toggleProducts(c.id)}>
-                    {c.productCount} product{c.productCount === 1 ? "" : "s"}
+                  {/* Both numbers, because they fail differently: a category the storefront shows as
+                      empty is a publishing problem if the links are there, and an assignment that
+                      never landed if they aren't. The storefront lists the published count. */}
+                  <button className="text-xs underline text-left" onClick={() => toggleProducts(c.id)}>
+                    {c.publishedCount} live
+                    {c.productCount !== c.publishedCount && (
+                      <span className="text-stone-400"> of {c.productCount} assigned</span>
+                    )}
                   </button>
                   <button
                     className="text-xs underline"

@@ -21,11 +21,19 @@ export default async function AdminProductsPage() {
   // New Arrivals isn't offered as a destination: every product joins it on creation and leaves it
   // after NEW_ARRIVALS_DAYS, so "moving" something there would be undone by the clock.
   const categoryNameByHandle = new Map(allCategories.map((c) => [c.handle, c.name]));
+  const timesNamed = allCategories.reduce<Record<string, number>>((acc, c) => {
+    acc[c.name] = (acc[c.name] ?? 0) + 1;
+    return acc;
+  }, {});
   const categoryChoices = allCategories
     .filter((c) => c.handle !== NEW_ARRIVALS_HANDLE)
     .map((c) => {
       const parent = c.parentHandle ? categoryNameByHandle.get(c.parentHandle) : undefined;
-      return { id: c.id, name: parent ? `${parent} / ${c.name}` : c.name };
+      const label = parent ? `${parent} / ${c.name}` : c.name;
+      // Two categories can share a name (an import creating a second "Dolls", say), and then
+      // picking one in a dropdown is a coin toss — and only one of them is the one the menu links
+      // to. The URL handle is the thing that distinguishes them, so show it when it matters.
+      return { id: c.id, name: timesNamed[c.name] > 1 ? `${label} (/${c.handle})` : label };
     });
   const draftCount = products.filter((p) => p.status === "DRAFT").length;
 

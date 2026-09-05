@@ -185,11 +185,15 @@ export async function PATCH(request: Request, { params }: { params: { id: string
     }
 
     if (parsed.data.categoryIds) {
-      await supabase.from("product_categories").delete().eq("product_id", params.id);
+      // Errors here used to be discarded, so a category assignment that the database rejected
+      // still came back as a successful save — the product looked filed and simply wasn't.
+      const { error: clearError } = await supabase.from("product_categories").delete().eq("product_id", params.id);
+      if (clearError) throw new Error(`Could not update categories: ${clearError.message}`);
       if (parsed.data.categoryIds.length > 0) {
-        await supabase
+        const { error: linkError } = await supabase
           .from("product_categories")
           .insert(parsed.data.categoryIds.map((category_id) => ({ product_id: params.id, category_id })));
+        if (linkError) throw new Error(`Could not set categories: ${linkError.message}`);
       }
     }
 
