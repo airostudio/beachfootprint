@@ -56,11 +56,34 @@ export async function POST(request: Request) {
 
       const committed = await commitAliExpressImport(supabase, { tenantId, staged });
 
-      await supabase
+      // Checked, and checked for having matched a row: the product is already written at this
+      // point, so an unmarked staged row leaves the item sitting in the review queue as though it
+      // had never been confirmed — and confirming it again is the natural next thing to try.
+      // (That re-confirm is safe: the commit finds the existing variant by supplier product id and
+      // updates the same product rather than creating a second one.) Silence here was how a
+      // promoted product stayed in staging with nothing to explain it.
+      const { data: marked, error: markError } = await supabase
         .from("aliexpress_staged_products")
         .update({ status: "confirmed", confirmed_product_id: committed.productId, confirmed_at: new Date().toISOString() })
         .eq("id", stagedId)
-        .eq("tenant_id", tenantId);
+        .eq("tenant_id", tenantId)
+        .select("id");
+
+      if (markError || (marked ?? []).length === 0) {
+        const reason = markError?.message ?? "the staged row did not match on its tenant";
+        console.error(`[aliexpress/confirm] UNMARKED staged=${stagedId} product=${committed.productId} tenant=${tenantId}: ${reason}`);
+        results.push({
+          stagedId,
+          ok: false,
+          handle: committed.handle,
+          productId: committed.productId,
+          isNewProduct: committed.isNewProduct,
+          error:
+            `"${committed.handle}" was added to the store, but it could not be cleared from this queue: ${reason}. ` +
+            "It is in Products now — remove the staged row here, or confirm again, which updates the same product rather than creating a second one.",
+        });
+        continue;
+      }
 
       // Logged so a "it said confirmed but I can't find it" report can be traced from the
       // runtime logs alone — response bodies aren't recorded there.

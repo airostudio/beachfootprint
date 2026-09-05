@@ -136,8 +136,16 @@ export default function AliExpressStagingPage() {
 
   async function remove(id: string) {
     setBusy(true);
+    setError(null);
     try {
-      await fetch(`/api/admin/products/aliexpress/staged/${id}`, { method: "DELETE" });
+      const res = await fetch(`/api/admin/products/aliexpress/staged/${id}`, { method: "DELETE" });
+      // A discard that failed used to look identical to one that worked — the row simply
+      // reappeared on the next load with nothing to say why.
+      if (!res.ok) {
+        const data = await res.json().catch(() => null);
+        setError(data?.error ?? "Could not remove this staged product");
+        return;
+      }
       await load();
     } finally {
       setBusy(false);
