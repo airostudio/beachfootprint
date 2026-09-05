@@ -155,6 +155,37 @@ export async function getAllProducts(): Promise<ProductSummary[]> {
 /** Admin views need drafts too (the WooCommerce importer lands everything as DRAFT for review) — no status filter. */
 export interface AdminProductSummary extends ProductSummary {
   status: string;
+  /**
+   * The categories a customer could browse to this product through — everything except New
+   * Arrivals, which every product joins on creation and leaves after NEW_ARRIVALS_DAYS, so it
+   * says nothing about where the product actually lives.
+   */
+  mainCategories: { id: string; name: string }[];
+}
+
+/** Main-category memberships for a set of products, keyed by product id. See AdminProductSummary. */
+async function mainCategoriesByProduct(productIds: string[]): Promise<Map<string, { id: string; name: string }[]>> {
+  const byProduct = new Map<string, { id: string; name: string }[]>();
+  if (productIds.length === 0) return byProduct;
+
+  const supabase = db();
+  const { data: links } = await supabase
+    .from("product_categories")
+    .select("product_id, categories!inner(id, name, handle)")
+    .in("product_id", productIds);
+
+  interface LinkRow {
+    product_id: string;
+    categories: { id: string; name: string; handle: string } | { id: string; name: string; handle: string }[];
+  }
+  for (const link of (links ?? []) as unknown as LinkRow[]) {
+    const category = Array.isArray(link.categories) ? link.categories[0] : link.categories;
+    if (!category || category.handle === NEW_ARRIVALS_HANDLE) continue;
+    const list = byProduct.get(link.product_id) ?? [];
+    list.push({ id: category.id, name: category.name });
+    byProduct.set(link.product_id, list);
+  }
+  return byProduct;
 }
 
 export async function getAllProductsForAdmin(): Promise<AdminProductSummary[]> {
@@ -170,8 +201,13 @@ export async function getAllProductsForAdmin(): Promise<AdminProductSummary[]> {
     .limit(2000);
   if (error) throw new Error(`Could not load products: ${error.message}`);
   const rows = (data ?? []) as (ProductRow & { status: string })[];
-  const hydrated = await hydrate(rows.map((r) => r.id));
-  return rows.map((r) => ({ ...toSummary(r, hydrated), status: r.status }));
+  const ids = rows.map((r) => r.id);
+  const [hydrated, categoriesByProduct] = await Promise.all([hydrate(ids), mainCategoriesByProduct(ids)]);
+  return rows.map((r) => ({
+    ...toSummary(r, hydrated),
+    status: r.status,
+    mainCategories: categoriesByProduct.get(r.id) ?? [],
+  }));
 }
 
 export async function getProductsBySlugs(slugs: string[]): Promise<ProductSummary[]> {

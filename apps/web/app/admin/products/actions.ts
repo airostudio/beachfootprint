@@ -185,6 +185,75 @@ export async function setProductsStatus(ids: string[], status: "PUBLISHED" | "DR
   return { ok: true, message: `${ids.length} product${ids.length === 1 ? "" : "s"} ${label}.` };
 }
 
+/**
+ * Moves selected products into one category, replacing whatever main category they were in.
+ *
+ * "Main category" is every category link except New Arrivals — that one is a timed membership
+ * every product gets on creation and loses after NEW_ARRIVALS_DAYS, so it isn't where a product
+ * lives and must survive this untouched. A product in two real categories ends up in just the
+ * chosen one, which is the point: this is "move", not "also add to".
+ */
+export async function setProductsMainCategory(ids: string[], categoryId: string): Promise<BulkResult> {
+  if (ids.length === 0) return { ok: false, message: "Nothing selected." };
+  const tenantId = await getTenantId();
+  const supabase = db();
+
+  const { data: category, error: categoryError } = await supabase
+    .from("categories")
+    .select("id, name, handle")
+    .eq("tenant_id", tenantId)
+    .eq("id", categoryId)
+    .maybeSingle();
+  if (categoryError) return { ok: false, message: `Could not load the category: ${categoryError.message}` };
+  const target = category as { id: string; name: string; handle: string } | null;
+  if (!target) return { ok: false, message: "That category no longer exists." };
+  if (target.handle === NEW_ARRIVALS_HANDLE) {
+    return { ok: false, message: "New Arrivals is applied automatically for the first few days — pick the category the products belong in." };
+  }
+
+  // Scoped to this tenant's own products, so an id from a stale page can't reach another store's
+  // catalogue. Anything filtered out here simply isn't touched.
+  const { data: owned, error: ownedError } = await supabase
+    .from("products")
+    .select("id")
+    .eq("tenant_id", tenantId)
+    .in("id", ids);
+  if (ownedError) return { ok: false, message: `Could not load products: ${ownedError.message}` };
+  const productIds = ((owned ?? []) as { id: string }[]).map((p) => p.id);
+  if (productIds.length === 0) return { ok: false, message: "None of those products are in this store." };
+
+  const { data: newArrivals } = await supabase
+    .from("categories")
+    .select("id")
+    .eq("tenant_id", tenantId)
+    .eq("handle", NEW_ARRIVALS_HANDLE)
+    .maybeSingle();
+  const newArrivalsId = (newArrivals?.id as string | undefined) ?? null;
+
+  // Chunked because `.in()` becomes a query-string filter, which has a length limit.
+  for (let i = 0; i < productIds.length; i += 200) {
+    const chunk = productIds.slice(i, i + 200);
+    let clear = supabase.from("product_categories").delete().in("product_id", chunk);
+    if (newArrivalsId) clear = clear.neq("category_id", newArrivalsId);
+    const { error: clearError } = await clear;
+    if (clearError) return { ok: false, message: `Could not clear the old categories: ${clearError.message}` };
+
+    const { error: insertError } = await supabase
+      .from("product_categories")
+      .insert(chunk.map((productId) => ({ product_id: productId, category_id: target.id })));
+    if (insertError) return { ok: false, message: `Could not set the category: ${insertError.message}` };
+  }
+
+  revalidateProductViews();
+  const skipped = ids.length - productIds.length;
+  return {
+    ok: true,
+    message:
+      `${productIds.length} product${productIds.length === 1 ? "" : "s"} moved to ${target.name}.` +
+      (skipped > 0 ? ` ${skipped} skipped — not in this store.` : ""),
+  };
+}
+
 function revalidateProductViews(): void {
   revalidatePath("/admin/products");
   revalidatePath("/admin");

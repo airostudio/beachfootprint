@@ -4,15 +4,27 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { formatMoney } from "@/lib/format";
-import { deleteProducts, publishProduct, setProductsStatus } from "@/app/admin/products/actions";
+import {
+  deleteProducts,
+  publishProduct,
+  setProductsMainCategory,
+  setProductsStatus,
+} from "@/app/admin/products/actions";
 import type { AdminProductSummary } from "@/lib/data/products";
+
+export interface CategoryChoice {
+  id: string;
+  name: string;
+}
 
 export default function ProductsTable({
   products,
   storeCurrency,
+  categories,
 }: {
   products: AdminProductSummary[];
   storeCurrency: string;
+  categories: CategoryChoice[];
 }) {
   const router = useRouter();
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -71,6 +83,30 @@ export default function ProductsTable({
             <button className="btn-secondary text-xs px-3 py-1.5" disabled={pending} onClick={() => run(() => setProductsStatus([...selected], "ARCHIVED"))}>
               Archive
             </button>
+            {/* Moves rather than adds: whatever category the products were in is replaced, so this
+                is the one control that answers "these are all in the wrong section". */}
+            <select
+              className="text-xs border border-stone-300 px-2 py-1.5 bg-white"
+              disabled={pending || categories.length === 0}
+              value=""
+              aria-label="Move selected products to a category"
+              onChange={(e) => {
+                const categoryId = e.target.value;
+                if (!categoryId) return;
+                const ids = [...selected];
+                e.target.value = "";
+                run(() => setProductsMainCategory(ids, categoryId));
+              }}
+            >
+              <option value="">
+                {categories.length === 0 ? "No categories yet" : "Move to category…"}
+              </option>
+              {categories.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
             <button
               className="text-xs px-3 py-1.5 text-red-600 border border-red-200 hover:bg-red-50"
               disabled={pending}
@@ -84,7 +120,7 @@ export default function ProductsTable({
             {pending && <span className="text-xs text-stone-500">Working…</span>}
           </>
         ) : (
-          <span className="text-xs text-stone-400">Tick products to publish, archive or delete them together.</span>
+          <span className="text-xs text-stone-400">Tick products to publish, archive, delete or re-categorise them together.</span>
         )}
       </div>
 
@@ -105,6 +141,7 @@ export default function ProductsTable({
               />
             </th>
             <th className="py-2">Title</th>
+            <th className="py-2">Category</th>
             <th className="py-2">Type</th>
             <th className="py-2">Price</th>
             <th className="py-2">Currency</th>
@@ -129,6 +166,15 @@ export default function ProductsTable({
                 <Link href={`/admin/products/${p.id}`} className="underline decoration-stone-300 hover:decoration-ink-950">
                   {p.title}
                 </Link>
+              </td>
+              <td className="py-2 text-stone-500">
+                {p.mainCategories.length > 0 ? (
+                  p.mainCategories.map((c) => c.name).join(", ")
+                ) : (
+                  <span className="text-amber-700" title="Only reachable by direct link — no category to browse it from">
+                    none
+                  </span>
+                )}
               </td>
               <td className="py-2 text-stone-500">{p.productType}</td>
               <td className="py-2">

@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { getAllProductsForAdmin, getProductsWithoutMainCategory } from "@/lib/data/products";
 import { getStoreCurrency } from "@/lib/data/settings";
+import { getCategories } from "@/lib/data/categories";
+import { NEW_ARRIVALS_HANDLE } from "@/lib/newArrivals";
 import { countDemoProducts } from "@/lib/data/demoProducts";
 import ProductsTable from "@/components/admin/ProductsTable";
 import { publishAllDrafts, removeDemoProducts, setCatalogueCurrency, sweepNewArrivals } from "./actions";
@@ -9,12 +11,22 @@ import { NEW_ARRIVALS_DAYS } from "@/lib/newArrivals";
 export const dynamic = "force-dynamic";
 
 export default async function AdminProductsPage() {
-  const [products, storeCurrency, demoCount, needMainCategory] = await Promise.all([
+  const [products, storeCurrency, demoCount, needMainCategory, allCategories] = await Promise.all([
     getAllProductsForAdmin(),
     getStoreCurrency(),
     countDemoProducts(),
     getProductsWithoutMainCategory(),
+    getCategories(),
   ]);
+  // New Arrivals isn't offered as a destination: every product joins it on creation and leaves it
+  // after NEW_ARRIVALS_DAYS, so "moving" something there would be undone by the clock.
+  const categoryNameByHandle = new Map(allCategories.map((c) => [c.handle, c.name]));
+  const categoryChoices = allCategories
+    .filter((c) => c.handle !== NEW_ARRIVALS_HANDLE)
+    .map((c) => {
+      const parent = c.parentHandle ? categoryNameByHandle.get(c.parentHandle) : undefined;
+      return { id: c.id, name: parent ? `${parent} / ${c.name}` : c.name };
+    });
   const draftCount = products.filter((p) => p.status === "DRAFT").length;
 
   // What the catalogue is actually priced in, against what the store is configured to sell in.
@@ -142,7 +154,7 @@ export default async function AdminProductsPage() {
           or all at once above.
         </p>
       )}
-      <ProductsTable products={products} storeCurrency={storeCurrency} />
+      <ProductsTable products={products} storeCurrency={storeCurrency} categories={categoryChoices} />
     </div>
   );
 }
