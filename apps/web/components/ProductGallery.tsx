@@ -7,6 +7,17 @@ export default function ProductGallery({ images }: { images: { url: string; alt:
   const [active, setActive] = useState(0);
   const [fullscreen, setFullscreen] = useState(false);
 
+  // Indexing images[active] on an empty list throws and takes the product page down with it. A
+  // product with no usable imagery is a normal state — nothing uploaded yet, or the only files on
+  // record are http and can't be displayed — so it gets an empty frame instead.
+  if (images.length === 0) {
+    return (
+      <div className="relative w-full aspect-[4/5] bg-stone-200 flex items-center justify-center">
+        <span className="text-xs tracking-widest2 uppercase text-stone-500">No image available</span>
+      </div>
+    );
+  }
+
   return (
     <div>
       <button

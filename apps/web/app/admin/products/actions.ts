@@ -125,3 +125,69 @@ export async function publishAllDrafts(): Promise<void> {
   revalidatePath("/shop");
   revalidatePath("/");
 }
+
+export interface BulkResult {
+  ok: boolean;
+  message: string;
+}
+
+/**
+ * Deletes selected products.
+ *
+ * order_items.variant_id is `on delete restrict`, so a product that has ever been ordered cannot
+ * be deleted — the constraint exists to stop a past order losing what it was for. That's a real
+ * answer, not a failure to work around, so a blocked product is named and left alone while the
+ * rest go through, and the admin is pointed at archiving instead.
+ */
+export async function deleteProducts(ids: string[]): Promise<BulkResult> {
+  if (ids.length === 0) return { ok: false, message: "Nothing selected." };
+  const tenantId = await getTenantId();
+  const supabase = db();
+
+  const { error } = await supabase.from("products").delete().eq("tenant_id", tenantId).in("id", ids);
+  if (!error) {
+    revalidateProductViews();
+    return { ok: true, message: `Deleted ${ids.length} product${ids.length === 1 ? "" : "s"}.` };
+  }
+
+  // One of them is referenced by an order. Retry individually so the others still go, and so the
+  // message can say exactly which ones couldn't.
+  const blocked: string[] = [];
+  let deleted = 0;
+  for (const id of ids) {
+    const { error: rowError } = await supabase.from("products").delete().eq("tenant_id", tenantId).eq("id", id);
+    if (rowError) blocked.push(id);
+    else deleted += 1;
+  }
+
+  revalidateProductViews();
+  if (blocked.length === 0) return { ok: true, message: `Deleted ${deleted} product${deleted === 1 ? "" : "s"}.` };
+
+  const { data: names } = await supabase.from("products").select("title").in("id", blocked);
+  const titles = ((names ?? []) as { title: string }[]).map((n) => n.title).join(", ");
+  return {
+    ok: deleted > 0,
+    message:
+      `${deleted} deleted. ${blocked.length} could not be: ${titles || blocked.length + " product(s)"} ` +
+      "appear in past orders, which keeps them from being deleted. Set them to Archived instead — that hides them from the storefront without losing the order history.",
+  };
+}
+
+/** Bulk status change — the useful bulk "edit": publishing a batch, or pulling one back to Draft/Archived. */
+export async function setProductsStatus(ids: string[], status: "PUBLISHED" | "DRAFT" | "ARCHIVED"): Promise<BulkResult> {
+  if (ids.length === 0) return { ok: false, message: "Nothing selected." };
+  const tenantId = await getTenantId();
+  const { error } = await db().from("products").update({ status }).eq("tenant_id", tenantId).in("id", ids);
+  if (error) return { ok: false, message: `Could not update: ${error.message}` };
+
+  revalidateProductViews();
+  const label = status === "PUBLISHED" ? "published" : status === "DRAFT" ? "moved to Draft" : "archived";
+  return { ok: true, message: `${ids.length} product${ids.length === 1 ? "" : "s"} ${label}.` };
+}
+
+function revalidateProductViews(): void {
+  revalidatePath("/admin/products");
+  revalidatePath("/admin");
+  revalidatePath("/shop");
+  revalidatePath("/");
+}

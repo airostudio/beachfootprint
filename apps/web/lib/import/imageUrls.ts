@@ -52,6 +52,23 @@ export function parseImageUrls(cell: string | undefined | null): ParsedImageUrls
   return { urls, rejected };
 }
 
+/**
+ * Whether the storefront can actually display this URL.
+ *
+ * Only https qualifies. next.config.mjs's remotePatterns allow https alone, so anything else is
+ * rejected by the image optimizer with INVALID_IMAGE_OPTIMIZE_REQUEST — and even if it were
+ * allowed, a browser blocks http subresources on an https page as mixed content. An http image
+ * therefore cannot be shown, however correct the URL is; it has to be copied into our own storage
+ * first. Widening remotePatterns would not fix it.
+ */
+export function isDisplayableImageUrl(url: string): boolean {
+  try {
+    return new URL(url).protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
 /** A stable storage path for a source image, so re-importing the same file doesn't pile up copies. */
 export function storagePathForImage(tenantId: string, sourceUrl: string): string {
   // Non-cryptographic; this only needs to be stable and collision-resistant enough for filenames.

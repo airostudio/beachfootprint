@@ -2,8 +2,8 @@ import Link from "next/link";
 import { getAllProductsForAdmin, getProductsWithoutMainCategory } from "@/lib/data/products";
 import { getStoreCurrency } from "@/lib/data/settings";
 import { countDemoProducts } from "@/lib/data/demoProducts";
-import { formatMoney } from "@/lib/format";
-import { publishAllDrafts, publishProduct, removeDemoProducts, setCatalogueCurrency, sweepNewArrivals } from "./actions";
+import ProductsTable from "@/components/admin/ProductsTable";
+import { publishAllDrafts, removeDemoProducts, setCatalogueCurrency, sweepNewArrivals } from "./actions";
 import { NEW_ARRIVALS_DAYS } from "@/lib/newArrivals";
 
 export const dynamic = "force-dynamic";
@@ -142,45 +142,7 @@ export default async function AdminProductsPage() {
           or all at once above.
         </p>
       )}
-      <table className="w-full text-sm">
-        <thead>
-          <tr className="text-left text-stone-500 border-b border-stone-200">
-            <th className="py-2">Title</th>
-            <th className="py-2">Type</th>
-            <th className="py-2">Price</th>
-            <th className="py-2">Currency</th>
-            <th className="py-2">Status</th>
-            <th className="py-2" />
-          </tr>
-        </thead>
-        <tbody>
-          {products.map((p) => (
-            <tr key={p.id} className="border-b border-stone-100">
-              <td className="py-2">
-                <Link href={`/admin/products/${p.id}`} className="hover:underline">
-                  {p.title}
-                </Link>
-              </td>
-              <td className="py-2 text-stone-500">{p.productType}</td>
-              <td className="py-2">{p.priceCents > 0 ? formatMoney(p.priceCents, p.currency) : <span className="text-red-600">no price</span>}</td>
-              <td className={`py-2 ${p.currency === storeCurrency ? "text-stone-500" : "text-red-600 font-medium"}`}>{p.currency}</td>
-              <td className="py-2 text-stone-500">{p.status}</td>
-              <td className="py-2 flex gap-3 items-center">
-                <Link href={`/admin/products/${p.id}`} className="text-xs underline">
-                  Edit
-                </Link>
-                {p.status !== "PUBLISHED" && (
-                  <form action={publishProduct.bind(null, p.id)}>
-                    <button type="submit" className="text-xs underline">
-                      Publish
-                    </button>
-                  </form>
-                )}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      <ProductsTable products={products} storeCurrency={storeCurrency} />
     </div>
   );
 }

@@ -104,6 +104,45 @@ function extractHeight(name: string, specs: Map<string, string>): string {
   return m ? m[1] : "";
 }
 
+
+/**
+ * WooCommerce products that don't manage stock levels export "In stock?" = 1 with no quantity —
+ * meaning "available", with no number attached. This store's model needs a number (checkout
+ * refuses a line whose stock won't cover it), so an unmanaged in-stock product gets a nominal
+ * quantity rather than the zero that would make it unbuyable the moment it imported.
+ */
+export const UNMANAGED_STOCK_DEFAULT = 100;
+
+/**
+ * Reads stock out of a WooCommerce row, which can express it three different ways: a managed
+ * quantity in "Stock", a yes/no in "In stock?", or a "Stock status" of instock/outofstock.
+ */
+export function readWooCommerceStock(values: {
+  stock?: string;
+  inStock?: string;
+  stockStatus?: string;
+}): string {
+  const quantity = values.stock?.trim();
+  if (quantity) {
+    const parsed = Number.parseInt(quantity.replace(/[^0-9-]/g, ""), 10);
+    // A managed quantity of 0 is a real answer: the product is genuinely out of stock.
+    if (Number.isFinite(parsed)) return String(Math.max(0, parsed));
+  }
+
+  const inStock = values.inStock?.trim().toLowerCase();
+  const status = values.stockStatus?.trim().toLowerCase();
+  const saysInStock =
+    inStock === "1" || inStock === "yes" || inStock === "true" || status === "instock" || status === "onbackorder";
+  const saysOutOfStock = inStock === "0" || inStock === "no" || inStock === "false" || status === "outofstock";
+
+  if (saysInStock) return String(UNMANAGED_STOCK_DEFAULT);
+  if (saysOutOfStock) return "0";
+
+  // Column absent entirely: treat the product as available rather than importing a catalogue
+  // nobody can buy from. An export that says nothing about stock isn't saying "none".
+  return String(UNMANAGED_STOCK_DEFAULT);
+}
+
 function cellText(row: ExcelJS.Row, colByHeader: Map<string, number>, header: string): string {
   const col = colByHeader.get(header);
   if (!col) return "";
@@ -184,7 +223,11 @@ export async function convertWooCommerceWorkbook(buffer: Buffer): Promise<WooCom
       price,
       compare_at: compareAt,
       sku: wcId ? `WC-${wcId}` : "",
-      stock_on_hand: "",
+      stock_on_hand: readWooCommerceStock({
+        stock: cellText(row, colByHeader, "Stock"),
+        inStock: cellText(row, colByHeader, "In stock?"),
+        stockStatus: cellText(row, colByHeader, "Stock status"),
+      }),
       category_handles: categoryHandles,
       brand: "",
       material: extractMaterial(categories, specs),
