@@ -3,16 +3,10 @@
 import Link from "next/link";
 import { useState } from "react";
 
-const primaryNav = [
-  { label: "Shop", href: "/shop" },
-  { label: "Dresses & Kimonos", href: "/shop/dresses-kimonos" },
-  { label: "Swim", href: "/shop/swim" },
-  { label: "Accessories", href: "/shop/accessories" },
-  { label: "Care", href: "/shop/care" },
-  { label: "New", href: "/shop/new-arrivals" },
-  { label: "Sale", href: "/shop/sale" },
-  { label: "Guides", href: "/guides" },
-];
+export interface NavCategory {
+  handle: string;
+  name: string;
+}
 
 const iconLinks = [
   { label: "Search", href: "/search" },
@@ -21,8 +15,19 @@ const iconLinks = [
   { label: "Cart", href: "/cart" },
 ];
 
-export default function Header() {
+/**
+ * Category links come from the layout, which reads the categories that actually have published
+ * products — so an empty category never appears in the menu, and a new one appears as soon as its
+ * first product is published, without this list being edited.
+ */
+export default function Header({ categories }: { categories: NavCategory[] }) {
   const [mobileOpen, setMobileOpen] = useState(false);
+
+  const primaryNav = [
+    { label: "Shop", href: "/shop" },
+    ...categories.map((c) => ({ label: c.name, href: `/shop/${c.handle}` })),
+    { label: "Guides", href: "/guides" },
+  ];
 
   return (
     <header className="sticky top-0 z-40 bg-warm-50/95 backdrop-blur border-b border-stone-200">

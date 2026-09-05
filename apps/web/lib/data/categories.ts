@@ -1,6 +1,8 @@
 import "server-only";
 import { db, getTenantId } from "./client";
 import type { Category } from "../types";
+import { NEW_ARRIVALS_HANDLE, newArrivalsCutoffIso } from "../newArrivals";
+import { isDisplayableImageUrl } from "../import/imageUrls";
 
 interface CategoryRow {
   id: string;
@@ -55,26 +57,21 @@ export interface FeatureCategory extends Category {
 }
 
 /**
- * Categories for the home page, built from what's actually in the database rather than a
- * hardcoded list — so adding a category (or the first product in one) shows up on the front page
- * with no code change.
+ * Categories that have something to show, with a count and a representative image.
  *
- * Each card's image is the main image of the newest published product in that category, which
- * keeps the front page reflecting current stock instead of a fixed hero shot. Categories with no
- * published products are left out: an empty card that leads to an empty listing is worse than not
- * showing the category yet.
+ * "Has something to show" means at least one published product a customer could actually reach by
+ * clicking through. New Arrivals is counted against its own cutoff (see lib/newArrivals.ts)
+ * rather than its stored links, so it can't advertise itself while everything in it has aged out
+ * and the listing behind it is empty.
  */
-export async function getFeatureCategories(limit = 6): Promise<FeatureCategory[]> {
+async function getCategoriesWithProducts(): Promise<FeatureCategory[]> {
   const tenantId = await getTenantId();
   const supabase = db();
   const categories = await getCategories();
   if (categories.length === 0) return [];
 
-  const idByHandle = new Map(categories.map((c) => [c.handle, c.id]));
-  const categoryIds = [...idByHandle.values()];
+  const categoryIds = categories.map((c) => c.id);
 
-  // Published products per category, newest first, so the first one seen for a category is the
-  // one whose image the card should use.
   const { data: links } = await supabase
     .from("product_categories")
     .select("category_id, products!inner(id, created_at, status, tenant_id)")
@@ -86,11 +83,17 @@ export async function getFeatureCategories(limit = 6): Promise<FeatureCategory[]
     category_id: string;
     products: { id: string; created_at: string } | { id: string; created_at: string }[];
   }
+  const newArrivalsId = categories.find((c) => c.handle === NEW_ARRIVALS_HANDLE)?.id;
+  const cutoff = newArrivalsCutoffIso();
+
   const newestByCategory = new Map<string, { id: string; created_at: string }>();
   const countByCategory = new Map<string, number>();
   for (const link of (links ?? []) as unknown as LinkRow[]) {
     const product = Array.isArray(link.products) ? link.products[0] : link.products;
     if (!product) continue;
+    // A product past the cutoff is no longer in New Arrivals as far as the listing is concerned,
+    // so it mustn't keep that category looking populated here either.
+    if (link.category_id === newArrivalsId && product.created_at < cutoff) continue;
     countByCategory.set(link.category_id, (countByCategory.get(link.category_id) ?? 0) + 1);
     const current = newestByCategory.get(link.category_id);
     if (!current || product.created_at > current.created_at) newestByCategory.set(link.category_id, product);
@@ -105,7 +108,7 @@ export async function getFeatureCategories(limit = 6): Promise<FeatureCategory[]
       .in("product_id", newestProductIds)
       .order("position");
     for (const row of (media ?? []) as { product_id: string; url: string }[]) {
-      if (!imageByProduct.has(row.product_id)) imageByProduct.set(row.product_id, row.url);
+      if (!imageByProduct.has(row.product_id) && isDisplayableImageUrl(row.url)) imageByProduct.set(row.product_id, row.url);
     }
   }
 
@@ -118,6 +121,35 @@ export async function getFeatureCategories(limit = 6): Promise<FeatureCategory[]
         imageUrl: (newest ? imageByProduct.get(newest.id) : undefined) ?? c.heroImageUrl,
         productCount: countByCategory.get(c.id) ?? 0,
       };
-    })
-    .slice(0, limit);
+    });
+}
+
+/**
+ * Categories for the home page, built from what's actually in the database rather than a
+ * hardcoded list — so adding a category (or the first product in one) shows up on the front page
+ * with no code change. Each card's image is the newest published product's main image, keeping
+ * the front page reflecting current stock instead of a fixed hero shot.
+ */
+export async function getFeatureCategories(limit = 6): Promise<FeatureCategory[]> {
+  return (await getCategoriesWithProducts()).slice(0, limit);
+}
+
+/**
+ * Top-level categories for the site navigation.
+ *
+ * An empty category is left out entirely: a menu item leading to "no products match" is worse
+ * than one fewer menu item, and it's how a store ends up advertising a section it doesn't stock.
+ * The flip side is the point of this — a category becomes visible the moment it has its first
+ * published product, without anyone editing the header.
+ */
+export async function getNavCategories(limit = 6): Promise<FeatureCategory[]> {
+  // Never throws: the root layout renders this, so an error here would take down every page on
+  // the site rather than one. A store with an unreachable database should still serve a header
+  // with Shop and Guides in it.
+  try {
+    return (await getCategoriesWithProducts()).filter((c) => !c.parentHandle).slice(0, limit);
+  } catch (error) {
+    console.error(`[nav] could not load categories: ${error instanceof Error ? error.message : error}`);
+    return [];
+  }
 }

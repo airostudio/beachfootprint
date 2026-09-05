@@ -1,16 +1,11 @@
 import Link from "next/link";
 
-const columns = [
-  {
-    title: "Shop",
-    links: [
-      { label: "Dresses & Kimonos", href: "/shop/dresses-kimonos" },
-      { label: "Swim", href: "/shop/swim" },
-      { label: "Accessories", href: "/shop/accessories" },
-      { label: "Care", href: "/shop/care" },
-      { label: "New Arrivals", href: "/shop/new-arrivals" },
-    ],
-  },
+export interface NavCategory {
+  handle: string;
+  name: string;
+}
+
+const staticColumns = [
   {
     title: "Support",
     links: [
@@ -32,7 +27,18 @@ const columns = [
   },
 ];
 
-export default function Footer() {
+/**
+ * The Shop column lists only categories that have published products, supplied by the layout —
+ * an empty category is left out rather than linking customers to nothing.
+ */
+export default function Footer({ categories }: { categories: NavCategory[] }) {
+  const columns = [
+    ...(categories.length > 0
+      ? [{ title: "Shop", links: categories.map((c) => ({ label: c.name, href: `/shop/${c.handle}` })) }]
+      : []),
+    ...staticColumns,
+  ];
+
   return (
     <footer className="border-t border-stone-200 bg-ink-950 text-warm-100 mt-24">
       <div className="container-page py-16 grid gap-12 sm:grid-cols-2 lg:grid-cols-4">
