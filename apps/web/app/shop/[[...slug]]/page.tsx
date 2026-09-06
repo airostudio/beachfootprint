@@ -28,6 +28,14 @@ export default async function ShopPage({ params }: Props) {
   const category = await getCategoryByHandle(handle);
   if (!category) notFound();
 
+  const parent = category.parentHandle ? await getCategoryByHandle(category.parentHandle) : undefined;
   const products = await getProductsByCategory(handle);
-  return <ShopGrid products={products} title={category.name} description={category.description} />;
+  return (
+    <ShopGrid
+      products={products}
+      title={category.name}
+      description={category.description}
+      breadcrumb={parent ? [{ label: parent.name, href: `/shop/${parent.handle}` }, { label: category.name }] : undefined}
+    />
+  );
 }

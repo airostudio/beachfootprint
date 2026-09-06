@@ -29,6 +29,7 @@ export default function AdminCategoriesPage() {
   const [busy, setBusy] = useState(false);
 
   const [newName, setNewName] = useState("");
+  const [newParentId, setNewParentId] = useState<string>("");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draft, setDraft] = useState<Partial<Category>>({});
 
@@ -62,11 +63,12 @@ export default function AdminCategoriesPage() {
       const res = await fetch("/api/admin/categories", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: newName.trim() }),
+        body: JSON.stringify({ name: newName.trim(), parentId: newParentId || null }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Could not create category");
       setNewName("");
+      setNewParentId("");
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not create category");
@@ -162,6 +164,21 @@ export default function AdminCategoriesPage() {
           placeholder="New category name"
           className="flex-1 border border-stone-300 px-3 py-2 text-sm"
         />
+        {/* A subcategory (e.g. Vibrators under Adult Toys) can be created directly under its
+            parent here, rather than creating it top-level and re-parenting it afterwards. */}
+        <select
+          value={newParentId}
+          onChange={(e) => setNewParentId(e.target.value)}
+          className="border border-stone-300 px-3 py-2 text-sm text-stone-600"
+          aria-label="Parent category"
+        >
+          <option value="">No parent (top level)</option>
+          {parents.map((p) => (
+            <option key={p.id} value={p.id}>
+              Under {p.name}
+            </option>
+          ))}
+        </select>
         <button className="btn-primary" disabled={busy || !newName.trim()} onClick={create}>
           Add category
         </button>
