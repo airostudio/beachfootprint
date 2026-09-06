@@ -172,7 +172,20 @@ export default function ProductsTable({
               </td>
               <td className="py-2 text-stone-500">
                 {p.mainCategories.length > 0 ? (
-                  p.mainCategories.map((c) => labelById.get(c.id) ?? c.name).join(", ")
+                  p.mainCategories.map((c, i) => (
+                    <span key={c.id}>
+                      {i > 0 && ", "}
+                      {/* A subcategory's parent shown here was never assigned directly — it's the
+                          parent page's rollup made visible, not a second, real link. Muted so it
+                          doesn't read as an assignment the admin needs to double check. */}
+                      <span
+                        className={c.implied ? "text-stone-400" : undefined}
+                        title={c.implied ? "Shown because a subcategory is assigned below it — not a direct assignment" : undefined}
+                      >
+                        {labelById.get(c.id) ?? c.name}
+                      </span>
+                    </span>
+                  ))
                 ) : (
                   <span className="text-amber-700" title="Only reachable by direct link — no category to browse it from">
                     none
