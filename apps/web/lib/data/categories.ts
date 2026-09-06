@@ -134,20 +134,43 @@ export async function getFeatureCategories(limit = 6): Promise<FeatureCategory[]
   return (await getCategoriesWithProducts()).slice(0, limit);
 }
 
+export interface NavCategory {
+  id: string;
+  handle: string;
+  name: string;
+  children: { id: string; handle: string; name: string }[];
+}
+
 /**
- * Top-level categories for the site navigation.
+ * Two-tier category tree for the site navigation — a top-level entry (Adult Toys) with its
+ * subcategories (Vibrators) nested under it, e.g. for a dropdown menu.
  *
  * An empty category is left out entirely: a menu item leading to "no products match" is worse
  * than one fewer menu item, and it's how a store ends up advertising a section it doesn't stock.
- * The flip side is the point of this — a category becomes visible the moment it has its first
- * published product, without anyone editing the header.
+ * A parent is kept, though, as soon as any one of its children has something to show — Adult Toys
+ * belongs in the menu the moment Vibrators has its first published product, even if nothing is
+ * filed directly under Adult Toys itself (visiting it rolls up every child's products; see
+ * getProductsByCategory). The flip side is the point of this — a category becomes visible the
+ * moment it has its first published product, without anyone editing the header.
  */
-export async function getNavCategories(limit = 6): Promise<FeatureCategory[]> {
+export async function getNavCategories(limit = 6): Promise<NavCategory[]> {
   // Never throws: the root layout renders this, so an error here would take down every page on
   // the site rather than one. A store with an unreachable database should still serve a header
   // with Shop and Guides in it.
   try {
-    return (await getCategoriesWithProducts()).filter((c) => !c.parentHandle).slice(0, limit);
+    const withProducts = await getCategoriesWithProducts();
+    const top = withProducts.filter((c) => !c.parentHandle);
+    return top
+      .map((c) => ({
+        id: c.id,
+        handle: c.handle,
+        name: c.name,
+        children: withProducts
+          .filter((child) => child.parentHandle === c.handle)
+          .map((child) => ({ id: child.id, handle: child.handle, name: child.name })),
+      }))
+      .filter((c) => c.children.length > 0 || (withProducts.find((w) => w.handle === c.handle)?.productCount ?? 0) > 0)
+      .slice(0, limit);
   } catch (error) {
     console.error(`[nav] could not load categories: ${error instanceof Error ? error.message : error}`);
     return [];

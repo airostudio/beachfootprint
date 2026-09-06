@@ -268,12 +268,18 @@ export async function getProductsByCategory(handle: string): Promise<ProductSumm
   const { data: category } = await supabase.from("categories").select("id").eq("tenant_id", tenantId).eq("handle", handle).maybeSingle();
   if (!category) return [];
 
+  // A parent category's page also shows everything filed under its subcategories, so visiting
+  // "Adult Toys" isn't an empty shell when every product is actually tagged under "Vibrators" —
+  // the nav (getNavCategories) already keeps Adult Toys listed on exactly that basis.
+  const { data: children } = await supabase.from("categories").select("id").eq("tenant_id", tenantId).eq("parent_id", category.id);
+  const categoryIds = [category.id, ...((children ?? []) as { id: string }[]).map((c) => c.id)];
+
   let query = supabase
     .from("products")
     .select(`${PRODUCT_COLUMNS}, product_categories!inner(category_id)`)
     .eq("tenant_id", tenantId)
     .eq("status", "PUBLISHED")
-    .eq("product_categories.category_id", category.id);
+    .in("product_categories.category_id", categoryIds);
 
   // New Arrivals is time-boxed: a product belongs to it for NEW_ARRIVALS_DAYS after it was
   // created, and the cutoff is applied here rather than waited out by a job, so the listing is
@@ -283,7 +289,11 @@ export async function getProductsByCategory(handle: string): Promise<ProductSumm
   const { data, error } = await query;
   if (error) throw new Error(`Could not load products for category "${handle}": ${error.message}`);
 
-  const rows = (data ?? []) as ProductRow[];
+  // A product filed under both the parent and one of its children joins twice with more than one
+  // id in the filter — de-duplicated by id rather than avoided upstream, since collapsing it to
+  // one row is simpler than trying to make the join itself not produce the second one.
+  const seen = new Set<string>();
+  const rows = ((data ?? []) as ProductRow[]).filter((r) => (seen.has(r.id) ? false : (seen.add(r.id), true)));
   const hydrated = await hydrate(rows.map((r) => r.id));
   return rows.map((r) => toSummary(r, hydrated));
 }
