@@ -158,31 +158,56 @@ export interface AdminProductSummary extends ProductSummary {
   /**
    * The categories a customer could browse to this product through — everything except New
    * Arrivals, which every product joins on creation and leaves after NEW_ARRIVALS_DAYS, so it
-   * says nothing about where the product actually lives.
+   * says nothing about where the product actually lives. Includes a subcategory's parent even
+   * when the product has no link of its own to it — `implied` marks those. See
+   * mainCategoriesByProduct.
    */
-  mainCategories: { id: string; name: string }[];
+  mainCategories: { id: string; name: string; implied?: boolean }[];
 }
 
-/** Main-category memberships for a set of products, keyed by product id. See AdminProductSummary. */
-async function mainCategoriesByProduct(productIds: string[]): Promise<Map<string, { id: string; name: string }[]>> {
-  const byProduct = new Map<string, { id: string; name: string }[]>();
+/**
+ * Main-category memberships for a set of products, keyed by product id. See AdminProductSummary.
+ *
+ * A product tagged only under a subcategory (Vibrators) shows its parent (Adult Toys) here too,
+ * by default — matching what a customer actually sees, since the storefront's parent category
+ * page rolls up its children's products (see getProductsByCategory). The parent entry is
+ * `implied: true` and never becomes a real product_categories row: showing it is purely a display
+ * default, not an assignment, so a product doesn't end up doubly filed just because its
+ * subcategory has a parent.
+ */
+async function mainCategoriesByProduct(
+  productIds: string[],
+): Promise<Map<string, { id: string; name: string; implied?: boolean }[]>> {
+  const byProduct = new Map<string, { id: string; name: string; implied?: boolean }[]>();
   if (productIds.length === 0) return byProduct;
 
   const supabase = db();
-  const { data: links } = await supabase
-    .from("product_categories")
-    .select("product_id, categories!inner(id, name, handle)")
-    .in("product_id", productIds);
+  const tenantId = await getTenantId();
 
-  interface LinkRow {
-    product_id: string;
-    categories: { id: string; name: string; handle: string } | { id: string; name: string; handle: string }[];
+  const [{ data: links }, { data: allCategories }] = await Promise.all([
+    supabase.from("product_categories").select("product_id, category_id").in("product_id", productIds),
+    supabase.from("categories").select("id, name, handle, parent_id").eq("tenant_id", tenantId),
+  ]);
+
+  interface CategoryRow2 {
+    id: string;
+    name: string;
+    handle: string;
+    parent_id: string | null;
   }
-  for (const link of (links ?? []) as unknown as LinkRow[]) {
-    const category = Array.isArray(link.categories) ? link.categories[0] : link.categories;
+  const categoryById = new Map(((allCategories ?? []) as CategoryRow2[]).map((c) => [c.id, c]));
+
+  for (const link of (links ?? []) as { product_id: string; category_id: string }[]) {
+    const category = categoryById.get(link.category_id);
     if (!category || category.handle === NEW_ARRIVALS_HANDLE) continue;
+
     const list = byProduct.get(link.product_id) ?? [];
-    list.push({ id: category.id, name: category.name });
+    const parent = category.parent_id ? categoryById.get(category.parent_id) : undefined;
+    // Parent first, so it reads as a breadcrumb (Adult Toys, Vibrators) rather than backwards.
+    if (parent && parent.handle !== NEW_ARRIVALS_HANDLE && !list.some((c) => c.id === parent.id)) {
+      list.push({ id: parent.id, name: parent.name, implied: true });
+    }
+    if (!list.some((c) => c.id === category.id)) list.push({ id: category.id, name: category.name });
     byProduct.set(link.product_id, list);
   }
   return byProduct;
