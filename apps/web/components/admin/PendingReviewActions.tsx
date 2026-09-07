@@ -9,6 +9,7 @@ export default function PendingReviewActions({ reviewId }: { reviewId: string })
   const [error, setError] = useState<string | null>(null);
 
   async function act(action: "approve" | "reject") {
+    if (action === "reject" && !window.confirm("Reject and delete this review? This can't be undone.")) return;
     setPending(action);
     setError(null);
     try {

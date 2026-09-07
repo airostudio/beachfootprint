@@ -9,6 +9,7 @@ import ProductReviews from "@/components/ProductReviews";
 import { formatMoney } from "@/lib/format";
 import { getProductBySlug, getProductsBySlugs } from "@/lib/data/products";
 import { getApprovedReviews } from "@/lib/data/reviews";
+import { safeJsonLd } from "@/lib/jsonLd";
 
 export const dynamic = "force-dynamic";
 
@@ -55,7 +56,7 @@ export default async function ProductPage({ params }: Props) {
 
   return (
     <div className="container-page py-12">
-      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: safeJsonLd(jsonLd) }} />
 
       <nav className="text-xs text-stone-500 mb-8 flex gap-2">
         <Link href="/shop">Shop</Link>
