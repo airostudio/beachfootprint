@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { getGuideBySlug } from "@/lib/data/guides";
+import { safeJsonLd } from "@/lib/jsonLd";
 
 export const dynamic = "force-dynamic";
 
@@ -26,7 +27,7 @@ export default async function GuideDetailPage({ params }: Props) {
 
   return (
     <div className="container-page py-14 max-w-2xl">
-      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: safeJsonLd(jsonLd) }} />
       <p className="eyebrow mb-3">{guide.category}</p>
       <h1 className="font-serif text-4xl mb-6">{guide.title}</h1>
       <div className="text-stone-600 leading-relaxed whitespace-pre-wrap">{guide.content}</div>

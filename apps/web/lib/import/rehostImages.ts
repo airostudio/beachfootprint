@@ -1,6 +1,7 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { storagePathForImage } from "./imageUrls";
+import { isBlockedFetchTarget } from "./urlSafety";
 
 export interface ImageFetchCredentials {
   username: string;
@@ -55,17 +56,57 @@ export async function rehostImages(
     }
 
     try {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
-      let response: Response;
+      let target: URL;
       try {
-        response = await fetch(url, {
-          signal: controller.signal,
-          headers: authHeader ? { Authorization: authHeader } : undefined,
-          redirect: "follow",
-        });
-      } finally {
-        clearTimeout(timeout);
+        target = new URL(url);
+      } catch {
+        failures.push({ url, reason: "not a valid URL" });
+        continue;
+      }
+
+      // Every hop is checked, not just the first: a URL that resolves safely can still redirect
+      // to an internal address, so this can't be a one-time check before the fetch. Followed
+      // manually (rather than `redirect: "follow"`) specifically so each hop is validated before
+      // it's requested, and credentials are only ever sent to the original host — not wherever a
+      // redirect happens to point.
+      let response: Response | undefined;
+      for (let hop = 0; hop < 5; hop++) {
+        if (await isBlockedFetchTarget(target)) {
+          failures.push({ url, reason: "points at a private or internal address, which isn't fetched" });
+          response = undefined;
+          break;
+        }
+
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+        let hopResponse: Response;
+        try {
+          hopResponse = await fetch(target, {
+            signal: controller.signal,
+            headers: authHeader && target.origin === new URL(url).origin ? { Authorization: authHeader } : undefined,
+            redirect: "manual",
+          });
+        } finally {
+          clearTimeout(timeout);
+        }
+
+        if (hopResponse.status >= 300 && hopResponse.status < 400) {
+          const location = hopResponse.headers.get("location");
+          if (!location) {
+            failures.push({ url, reason: `image host redirected (${hopResponse.status}) without a location` });
+            response = undefined;
+            break;
+          }
+          target = new URL(location, target);
+          continue;
+        }
+
+        response = hopResponse;
+        break;
+      }
+      if (!response) {
+        if (!failures.some((f) => f.url === url)) failures.push({ url, reason: "too many redirects" });
+        continue;
       }
 
       if (response.status === 401 || response.status === 403) {
