@@ -120,13 +120,28 @@ describe("resolveCart", () => {
     expect(cart.lines[0].unavailableReason).toBe("Out of stock");
   });
 
-  it("refuses a variant belonging to another tenant by dropping it silently", async () => {
+  it("surfaces a variant belonging to another tenant as an unavailable line rather than dropping it", async () => {
     const supabase = fakeSupabase({
       variants: [variant({ products: { id: "product-1", tenant_id: "other-tenant", title: "Sandal", handle: "sandal", status: "PUBLISHED" } })],
       stock: { "variant-1": 10 },
     });
     const cart = await resolveCart(supabase, TENANT_ID, [{ variantId: "variant-1", quantity: 1 }]);
-    expect(cart.lines).toHaveLength(0);
+    // It must still be visible so the customer can see and remove it, rather than the cart just
+    // quietly having fewer items (and a lower total) than what's in localStorage.
+    expect(cart.lines).toHaveLength(1);
+    expect(cart.lines[0].purchasable).toBe(false);
+    expect(cart.lines[0].unavailableReason).toBe("No longer available");
+    expect(cart.subtotalCents).toBe(0);
+  });
+
+  it("surfaces a variant id with no matching row at all as an unavailable line", async () => {
+    const supabase = fakeSupabase({ variants: [], stock: {} });
+    const cart = await resolveCart(supabase, TENANT_ID, [{ variantId: "deleted-variant", quantity: 2 }]);
+    expect(cart.lines).toHaveLength(1);
+    expect(cart.lines[0].variantId).toBe("deleted-variant");
+    expect(cart.lines[0].purchasable).toBe(false);
+    expect(cart.lines[0].unavailableReason).toBe("No longer available");
+    expect(cart.subtotalCents).toBe(0);
   });
 
   it("marks an unpublished product's line unpurchasable", async () => {

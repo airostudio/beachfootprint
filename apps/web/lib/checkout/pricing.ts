@@ -103,11 +103,20 @@ export async function resolveCart(
   }
 
   const lines: ResolvedLine[] = [];
+  // A variant id with no matching row — deleted, another tenant's, or just stale localStorage —
+  // used to be silently dropped from the priced result entirely. The line vanished from the cart
+  // and checkout with no explanation, while the header's item-count badge (driven off the raw
+  // localStorage list, not this resolved result) kept counting it, and the displayed subtotal
+  // quietly came out lower than the number of items suggested. It's surfaced as an unavailable
+  // line instead, same as a variant that's gone out of stock or unpublished, so the customer sees
+  // it and can remove it rather than being left to wonder why the numbers don't add up.
+  const missing: { variantId: string; quantity: number }[] = [];
   for (const want of wanted) {
     const row = rows.find((r) => r.id === want.variantId);
-    // A variant that has vanished, belongs to another tenant, or whose product isn't published
-    // is simply dropped — it should never appear in a cart, let alone be charged for.
-    if (!row || !row.products || row.products.tenant_id !== tenantId) continue;
+    if (!row || !row.products || row.products.tenant_id !== tenantId) {
+      missing.push(want);
+      continue;
+    }
 
     const stockOnHand = stockByVariant.get(row.id) ?? 0;
     const published = row.products.status === "PUBLISHED";
@@ -149,6 +158,28 @@ export async function resolveCart(
       line.purchasable = false;
       line.unavailableReason = `Priced in ${line.currency}, but this cart is in ${currency}`;
     }
+  }
+
+  // Appended after currency is settled from the real lines, tagged with that same currency —
+  // never $0 in a currency of its own, which would otherwise be able to become the cart's
+  // currency if it happened to resolve first.
+  for (const want of missing) {
+    lines.push({
+      variantId: want.variantId,
+      productId: "",
+      handle: "",
+      title: "This item",
+      variantTitle: null,
+      sku: null,
+      imageUrl: null,
+      unitPriceCents: 0,
+      quantity: want.quantity,
+      lineTotalCents: 0,
+      currency,
+      stockOnHand: 0,
+      purchasable: false,
+      unavailableReason: "No longer available",
+    });
   }
 
   const subtotalCents = lines.filter((l) => l.purchasable).reduce((sum, l) => sum + l.lineTotalCents, 0);

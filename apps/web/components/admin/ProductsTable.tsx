@@ -131,6 +131,7 @@ export default function ProductsTable({
         <p className={`text-xs mb-3 ${message.ok ? "text-green-700" : "text-red-600"}`}>{message.text}</p>
       )}
 
+      <div className="overflow-x-auto">
       <table className="w-full text-sm">
         <thead>
           <tr className="text-left text-stone-500 border-b border-stone-200">
@@ -218,6 +219,7 @@ export default function ProductsTable({
           ))}
         </tbody>
       </table>
+      </div>
     </>
   );
 }
