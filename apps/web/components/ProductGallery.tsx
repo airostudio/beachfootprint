@@ -1,11 +1,22 @@
 "use client";
 
 import Image from "next/image";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 export default function ProductGallery({ images }: { images: { url: string; alt: string }[] }) {
   const [active, setActive] = useState(0);
   const [fullscreen, setFullscreen] = useState(false);
+
+  // The overlay had no keyboard escape route at all — a keyboard-only or screen-reader user who
+  // opened it could not get back out.
+  useEffect(() => {
+    if (!fullscreen) return;
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") setFullscreen(false);
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [fullscreen]);
 
   // Indexing images[active] on an empty list throws and takes the product page down with it. A
   // product with no usable imagery is a normal state — nothing uploaded yet, or the only files on
@@ -40,11 +51,25 @@ export default function ProductGallery({ images }: { images: { url: string; alt:
       </div>
 
       {fullscreen && (
-        <div className="fixed inset-0 z-[90] bg-ink-950/95 flex items-center justify-center p-6" onClick={() => setFullscreen(false)}>
+        <div
+          className="fixed inset-0 z-[90] bg-ink-950/95 flex items-center justify-center p-6"
+          onClick={() => setFullscreen(false)}
+          role="dialog"
+          aria-modal="true"
+          aria-label={`Fullscreen image: ${images[active].alt}`}
+        >
           <div className="relative w-full max-w-3xl aspect-[4/5]">
             <Image src={images[active].url} alt={images[active].alt} fill sizes="100vw" className="object-contain" />
           </div>
-          <button className="absolute top-6 right-6 text-warm-50 text-sm tracking-widest2 uppercase">Close</button>
+          <button
+            className="absolute top-6 right-6 text-warm-50 text-sm tracking-widest2 uppercase"
+            onClick={(e) => {
+              e.stopPropagation();
+              setFullscreen(false);
+            }}
+          >
+            Close
+          </button>
         </div>
       )}
     </div>

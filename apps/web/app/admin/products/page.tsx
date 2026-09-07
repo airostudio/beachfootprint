@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { getAllProductsForAdmin, getProductsWithoutMainCategory } from "@/lib/data/products";
+import { getAllProductsForAdmin, getProductCount, getProductsWithoutMainCategory } from "@/lib/data/products";
 import { getStoreCurrency } from "@/lib/data/settings";
 import { getCategories } from "@/lib/data/categories";
 import { NEW_ARRIVALS_HANDLE } from "@/lib/newArrivals";
@@ -11,13 +11,17 @@ import { NEW_ARRIVALS_DAYS } from "@/lib/newArrivals";
 export const dynamic = "force-dynamic";
 
 export default async function AdminProductsPage() {
-  const [products, storeCurrency, demoCount, needMainCategory, allCategories] = await Promise.all([
+  const [products, totalProductCount, storeCurrency, demoCount, needMainCategory, allCategories] = await Promise.all([
     getAllProductsForAdmin(),
+    getProductCount(),
     getStoreCurrency(),
     countDemoProducts(),
     getProductsWithoutMainCategory(),
     getCategories(),
   ]);
+  // getAllProductsForAdmin caps at 2000 rows — past that, the oldest products would otherwise
+  // just vanish from this list with nothing on screen to say any were left out.
+  const truncated = totalProductCount > products.length;
   // New Arrivals isn't offered as a destination: every product joins it on creation and leaves it
   // after NEW_ARRIVALS_DAYS, so "moving" something there would be undone by the clock.
   const categoryNameByHandle = new Map(allCategories.map((c) => [c.handle, c.name]));
@@ -72,7 +76,10 @@ export default async function AdminProductsPage() {
         </div>
       </div>
       <div className="text-xs text-stone-500 mb-4 flex flex-wrap gap-x-4 gap-y-1">
-        <span>{products.length} product{products.length === 1 ? "" : "s"}</span>
+        <span>
+          {products.length} product{products.length === 1 ? "" : "s"}
+          {truncated && <span className="text-amber-700"> (of {totalProductCount} — showing the most recent)</span>}
+        </span>
         <span>
           Selling in <span className="font-medium">{storeCurrency}</span>{" "}
           <Link href="/admin/payments" className="underline">

@@ -33,12 +33,14 @@ export default function CartPage() {
   const { lines, setQuantity, remove, ready } = useCart();
   const [cart, setCart] = useState<ResolvedCart | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
 
   // Prices always come from the server, so a stale or edited localStorage cart can never
   // show (or charge) the wrong amount.
   const price = useCallback(async () => {
     if (lines.length === 0) {
       setCart(null);
+      setError(false);
       setLoading(false);
       return;
     }
@@ -49,7 +51,17 @@ export default function CartPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ lines }),
       });
-      setCart(res.ok ? await res.json() : null);
+      // A failure used to fall straight through to the "items" render with cart still null,
+      // which renders as an empty-looking cart with a $0 total — indistinguishable from actually
+      // having nothing in it, for a customer who has real items sitting in localStorage.
+      if (res.ok) {
+        setCart(await res.json());
+        setError(false);
+      } else {
+        setError(true);
+      }
+    } catch {
+      setError(true);
     } finally {
       setLoading(false);
     }
@@ -74,6 +86,13 @@ export default function CartPage() {
         </div>
       ) : loading && !cart ? (
         <p className="text-sm text-stone-500">Loading your cart…</p>
+      ) : error && !cart ? (
+        <div className="text-center py-20">
+          <p className="text-red-600 mb-6">We couldn&rsquo;t load your cart. Your items are still saved — try again.</p>
+          <button className="btn-primary" onClick={() => price()}>
+            Try again
+          </button>
+        </div>
       ) : (
         <div className="grid lg:grid-cols-[1fr_360px] gap-12">
           <div className="divide-y divide-stone-200 border-t border-b border-stone-200">
@@ -83,9 +102,16 @@ export default function CartPage() {
                   {line.imageUrl && <Image src={line.imageUrl} alt={line.title} fill sizes="100px" className="object-cover" />}
                 </div>
                 <div className="flex-1">
-                  <Link href={`/product/${line.handle}`} className="font-medium hover:underline">
-                    {line.title}
-                  </Link>
+                  {/* A line for a variant that no longer resolves to a product (deleted, or from
+                      another tenant) has no handle to link to — shown as plain text instead of a
+                      link into a 404. */}
+                  {line.handle ? (
+                    <Link href={`/product/${line.handle}`} className="font-medium hover:underline">
+                      {line.title}
+                    </Link>
+                  ) : (
+                    <p className="font-medium">{line.title}</p>
+                  )}
                   {line.variantTitle && <p className="text-sm text-stone-500">{line.variantTitle}</p>}
                   {!line.purchasable && <p className="text-sm text-red-600 mt-1">{line.unavailableReason}</p>}
                   <div className="flex items-center gap-4 mt-3">

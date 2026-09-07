@@ -13,7 +13,12 @@ export default async function AdminCmsPage() {
           <p className="text-sm font-medium mb-2">Homepage Hero</p>
           <p className="text-xs text-stone-500">Headline: {heroBanner.headline}</p>
           <p className="text-xs text-stone-500">Body: {heroBanner.body}</p>
-          <button className="btn-secondary mt-4">Edit Hero</button>
+          {/* No editor exists yet for the hero banner or guides — this used to be a live-looking
+              button with no onClick, which gave no feedback at all when clicked. Disabled with a
+              reason is the honest version of the same stub. */}
+          <button className="btn-secondary mt-4 opacity-50 cursor-not-allowed" disabled title="Editing isn't built yet">
+            Edit Hero
+          </button>
         </div>
       </div>
       <div>
@@ -22,7 +27,9 @@ export default async function AdminCmsPage() {
           {guides.map((g) => (
             <div key={g.slug} className="border border-stone-200 p-3 flex justify-between text-sm">
               <span>{g.title}</span>
-              <button className="text-xs underline">Edit</button>
+              <button className="text-xs underline text-stone-400 cursor-not-allowed" disabled title="Editing isn't built yet">
+                Edit
+              </button>
             </div>
           ))}
         </div>

@@ -213,6 +213,18 @@ async function mainCategoriesByProduct(
   return byProduct;
 }
 
+/**
+ * True count of the tenant's products, independent of getAllProductsForAdmin's own 2000-row cap —
+ * so the admin list can tell "there are exactly 2000 products" apart from "there are more than
+ * 2000 and the oldest ones are being left off the screen with nothing to say so".
+ */
+export async function getProductCount(): Promise<number> {
+  const tenantId = await getTenantId();
+  const { count, error } = await db().from("products").select("id", { count: "exact", head: true }).eq("tenant_id", tenantId);
+  if (error) throw new Error(`Could not count products: ${error.message}`);
+  return count ?? 0;
+}
+
 export async function getAllProductsForAdmin(): Promise<AdminProductSummary[]> {
   const tenantId = await getTenantId();
   // Newest first, explicitly: without an ORDER BY, Postgres returns rows in arbitrary order and

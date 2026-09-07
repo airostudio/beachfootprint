@@ -17,7 +17,7 @@ const STATUS_STYLES: Record<string, string> = {
 };
 
 export default async function AdminOrdersPage() {
-  const orders = await getAdminOrders();
+  const { orders, truncated } = await getAdminOrders();
   const pendingPayment = orders.filter((o) => o.status === "PENDING_PAYMENT").length;
   const awaitingFulfillment = orders.filter((o) => o.status === "PAID").length;
 
@@ -51,6 +51,13 @@ export default async function AdminOrdersPage() {
           </p>
         </div>
       ) : (
+        <>
+        {truncated && (
+          <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 px-3 py-2 mb-3">
+            Showing the {orders.length} most recent orders — there are more than that in total. Older orders aren&rsquo;t shown here yet.
+          </p>
+        )}
+        <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
             <tr className="text-left text-stone-500 border-b border-stone-200">
@@ -142,6 +149,8 @@ export default async function AdminOrdersPage() {
             ))}
           </tbody>
         </table>
+        </div>
+        </>
       )}
     </div>
   );

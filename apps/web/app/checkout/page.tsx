@@ -49,6 +49,7 @@ function CheckoutFlow() {
 
   const [stepIndex, setStepIndex] = useState(0);
   const [cart, setCart] = useState<ResolvedCart | null>(null);
+  const [cartError, setCartError] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -61,12 +62,24 @@ function CheckoutFlow() {
 
   const price = useCallback(async () => {
     if (lines.length === 0) return;
-    const res = await fetch("/api/cart/lines", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ lines }),
-    });
-    if (res.ok) setCart(await res.json());
+    try {
+      const res = await fetch("/api/cart/lines", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ lines }),
+      });
+      // On failure `cart` was simply left null forever with no explanation — the Pay button was
+      // already correctly disabled by `!cart`, but nothing on the page said why, or offered a way
+      // to retry short of reloading.
+      if (res.ok) {
+        setCart(await res.json());
+        setCartError(false);
+      } else {
+        setCartError(true);
+      }
+    } catch {
+      setCartError(true);
+    }
   }, [lines]);
 
   useEffect(() => {
@@ -172,6 +185,14 @@ function CheckoutFlow() {
 
         {stepIndex === 2 && (
           <div className="max-w-md">
+            {cartError && (
+              <p className="text-sm text-red-600 border border-red-200 bg-red-50 px-4 py-3 mb-4">
+                We couldn&rsquo;t load your order total.{" "}
+                <button type="button" className="underline" onClick={() => price()}>
+                  Try again
+                </button>
+              </p>
+            )}
             <ul className="text-sm border-t border-stone-200 divide-y divide-stone-100">
               {(cart?.lines ?? []).map((l) => (
                 <li key={l.variantId} className="flex justify-between py-2">

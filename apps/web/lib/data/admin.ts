@@ -90,10 +90,20 @@ export interface AdminOrderSummary {
  * PENDING_PAYMENT and becomes PAID only when Stripe's webhook confirms the money moved, so this
  * list is also how you spot payments that started but never completed.
  */
-export async function getAdminOrders(limit = 200): Promise<AdminOrderSummary[]> {
+export interface AdminOrdersPage {
+  orders: AdminOrderSummary[];
+  /** True when there are more orders than `limit` — the list below was cut off, not the whole store's history. */
+  truncated: boolean;
+}
+
+export async function getAdminOrders(limit = 200): Promise<AdminOrdersPage> {
   const tenantId = await getTenantId();
   const supabase = db();
 
+  // Fetches one row past the limit purely to detect whether more exist — that row is trimmed
+  // back off below and never appears in the result. Without this, a store that grows past the
+  // cap has its oldest orders quietly vanish from the admin list with nothing on screen to say
+  // any were left out.
   const { data, error } = await supabase
     .from("orders")
     .select(
@@ -101,8 +111,10 @@ export async function getAdminOrders(limit = 200): Promise<AdminOrderSummary[]> 
     )
     .eq("tenant_id", tenantId)
     .order("created_at", { ascending: false })
-    .limit(limit);
+    .limit(limit + 1);
   if (error) throw new Error(`Could not load orders: ${error.message}`);
+  const truncated = (data ?? []).length > limit;
+  if (truncated) data!.length = limit;
 
   interface OrderRow {
     id: string;
@@ -117,7 +129,7 @@ export async function getAdminOrders(limit = 200): Promise<AdminOrderSummary[]> 
     aliexpress_order_id: string | null;
   }
   const rows = (data ?? []) as OrderRow[];
-  if (rows.length === 0) return [];
+  if (rows.length === 0) return { orders: [], truncated: false };
 
   const orderIds = rows.map((r) => r.id);
   const customerIds = [...new Set(rows.map((r) => r.customer_id).filter((id): id is string => Boolean(id)))];
@@ -139,7 +151,7 @@ export async function getAdminOrders(limit = 200): Promise<AdminOrderSummary[]> 
   );
   const shortfallOrderIds = new Set(((shortfallRows ?? []) as { order_id: string }[]).map((r) => r.order_id));
 
-  return rows.map((r) => {
+  const orders = rows.map((r) => {
     const customer = r.customer_id ? customerById.get(r.customer_id) : undefined;
     const address = (r.shipping_address ?? null) as OrderAddress | null;
     return {
@@ -159,6 +171,7 @@ export async function getAdminOrders(limit = 200): Promise<AdminOrderSummary[]> 
       hasStockShortfall: shortfallOrderIds.has(r.id),
     };
   });
+  return { orders, truncated };
 }
 
 export interface AdminOrderItem {
