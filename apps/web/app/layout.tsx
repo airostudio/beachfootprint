@@ -1,12 +1,14 @@
 import type { Metadata } from "next";
+import { SITE_URL } from "@/lib/siteUrl";
 import "./globals.css";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
 import { CartProvider } from "@/lib/cart";
 import { getNavCategories } from "@/lib/data/categories";
+import { getFreeShippingNote } from "@/lib/data/settings";
 
 export const metadata: Metadata = {
-  metadataBase: new URL("https://example.com"),
+  metadataBase: new URL(SITE_URL),
   title: { default: "Beach Footprints — Boho Surf Lifestyle", template: "%s | Beach Footprints" },
   description: "Boho surf-culture apparel and accessories — woven, hand-dyed and built for barefoot mornings.",
   robots: { index: true, follow: true },
@@ -26,7 +28,7 @@ export const dynamic = "force-dynamic";
 // Reads the categories that actually have published products, so the header and footer never
 // advertise an empty section and pick up a new one as soon as it has stock.
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
-  const navCategories = await getNavCategories();
+  const [navCategories, freeShippingNote] = await Promise.all([getNavCategories(), getFreeShippingNote()]);
 
   return (
     <html lang="en">
@@ -34,7 +36,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         <CartProvider>
           <Header categories={navCategories} />
           <main>{children}</main>
-          <Footer categories={navCategories} />
+          <Footer categories={navCategories} freeShippingNote={freeShippingNote} />
         </CartProvider>
       </body>
     </html>

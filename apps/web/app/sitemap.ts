@@ -1,10 +1,11 @@
 import type { MetadataRoute } from "next";
+import { SITE_URL } from "@/lib/siteUrl";
 import { getCategories } from "@/lib/data/categories";
 import { getAllProducts } from "@/lib/data/products";
 import { getGuides } from "@/lib/data/guides";
 import { POLICIES } from "@/lib/legal/policies";
 
-const baseUrl = "https://example.com";
+const baseUrl = SITE_URL;
 
 export const dynamic = "force-dynamic";
 

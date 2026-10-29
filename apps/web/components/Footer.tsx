@@ -19,7 +19,7 @@ const staticColumns = [
   {
     title: "About",
     links: [
-      { label: "Packing Guide", href: "/guides/packing-for-a-coastal-getaway" },
+      { label: "Guides", href: "/guides" },
       { label: "Terms & Conditions", href: "/legal/terms" },
       { label: "Privacy Policy", href: "/legal/privacy" },
       { label: "Product Finder", href: "/product-finder" },
@@ -31,7 +31,7 @@ const staticColumns = [
  * The Shop column lists only categories that have published products, supplied by the layout —
  * an empty category is left out rather than linking customers to nothing.
  */
-export default function Footer({ categories }: { categories: NavCategory[] }) {
+export default function Footer({ categories, freeShippingNote }: { categories: NavCategory[]; freeShippingNote?: string | null }) {
   const columns = [
     ...(categories.length > 0
       ? [{ title: "Shop", links: categories.map((c) => ({ label: c.name, href: `/shop/${c.handle}` })) }]
@@ -66,7 +66,7 @@ export default function Footer({ categories }: { categories: NavCategory[] }) {
       <div className="border-t border-ink-800">
         <div className="container-page py-6 text-xs text-stone-500 flex flex-col sm:flex-row justify-between gap-2">
           <p>© {new Date().getFullYear()} Beach Footprints. All rights reserved.</p>
-          <p>Free shipping over $75.</p>
+          {freeShippingNote && <p>{freeShippingNote}</p>}
         </div>
       </div>
     </footer>

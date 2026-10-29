@@ -19,7 +19,6 @@ export default function AddToCartActions({
   const [qty, setQty] = useState(1);
   const [selectedId, setSelectedId] = useState(variants.find((v) => v.inStock)?.id ?? variants[0]?.id ?? "");
   const [added, setAdded] = useState(false);
-  const [wishlisted, setWishlisted] = useState(false);
 
   const selected = variants.find((v) => v.id === selectedId);
   const canBuy = Boolean(selected?.inStock);
@@ -79,23 +78,24 @@ export default function AddToCartActions({
           <Link href="/cart" className="btn-secondary flex-1 min-w-[140px] text-center">
             View Cart
           </Link>
-        ) : (
-          <Link href="/cart" className="btn-secondary flex-1 min-w-[140px] text-center" onClick={addToCart}>
+        ) : canBuy ? (
+          // Straight to checkout — "Buy Now" used to land on the cart, and added the item even when
+          // the selected variant was out of stock.
+          <Link href="/checkout" className="btn-secondary flex-1 min-w-[140px] text-center" onClick={addToCart}>
             Buy Now
           </Link>
-        )}
+        ) : null}
       </div>
 
+      {/* The "Add to Wishlist" toggle saved nothing (wishlists need customer sign-in, not built
+          yet) and "Compare" had no handler — removed rather than left as dead controls. */}
       <div className="flex gap-6 text-xs tracking-widest2 uppercase text-stone-500">
-        <button onClick={() => setWishlisted((v) => !v)} className={wishlisted ? "text-ink-950" : ""}>
-          {wishlisted ? "Wishlisted ✓" : "Add to Wishlist"}
-        </button>
-        <button>Compare</button>
+        <Link href="/compare" className="hover:text-ink-950">
+          Compare products
+        </Link>
       </div>
 
-      <p className="text-xs text-stone-500">
-        {formatMoney(selected?.priceCents ?? priceCents, selected?.currency ?? currency)} · Ships in simple, unmarked packaging.
-      </p>
+      <p className="text-xs text-stone-500">{formatMoney(selected?.priceCents ?? priceCents, selected?.currency ?? currency)}</p>
     </div>
   );
 }
