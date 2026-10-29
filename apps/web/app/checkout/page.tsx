@@ -11,7 +11,9 @@ import { useCart } from "@/lib/cart";
 
 const checkoutSchema = z.object({
   email: z.string().email("Enter a valid email address"),
-  phone: z.string().optional(),
+  // Required: AliExpress won't accept a shipping address without a phone number, so an order
+  // placed without one can be paid for and then never ship.
+  phone: z.string().trim().min(6, "Enter a phone number — the courier needs it for delivery"),
   fullName: z.string().min(2, "Enter your full name"),
   line1: z.string().min(3, "Enter your street address"),
   line2: z.string().optional(),
@@ -156,8 +158,9 @@ function CheckoutFlow() {
               {errors.email && <p className="text-xs text-red-600 mt-1">{errors.email.message}</p>}
             </div>
             <div>
-              <label className="text-sm block mb-1">Phone (optional)</label>
-              <input {...register("phone")} className="w-full border border-stone-300 px-3 py-2 text-sm" />
+              <label className="text-sm block mb-1">Phone</label>
+              <input {...register("phone")} type="tel" autoComplete="tel" className="w-full border border-stone-300 px-3 py-2 text-sm" />
+              {errors.phone && <p className="text-xs text-red-600 mt-1">{errors.phone.message}</p>}
             </div>
           </div>
         )}

@@ -1,30 +1,47 @@
 import type { EmailProvider } from "../email";
 import type { TransactionalEmail } from "../../types";
 
+/**
+ * Everything interpolated into these templates comes from outside: product titles are supplier
+ * (AliExpress/CSV) text, carrier and tracking values come from the dropship engine. Escaped so a
+ * title containing markup can't inject HTML or links into a customer's inbox.
+ */
+function esc(value: unknown): string {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+/** Only http(s) links are rendered — a `javascript:` tracking URL becomes plain text. */
+function safeUrl(value: unknown): string | undefined {
+  return typeof value === "string" && /^https?:\/\//i.test(value) ? value : undefined;
+}
+
 /** Minimal HTML per known template — good enough for a transactional receipt, not a design system. */
 function renderBody(email: TransactionalEmail): { subject: string; html: string } {
   const data = email.data as Record<string, unknown>;
   switch (email.templateKey) {
     case "order-confirmation": {
       const items = Array.isArray(data.items) ? (data.items as Array<{ name: string; quantity: number }>) : [];
-      const rows = items.map((item) => `<li>${item.quantity} × ${item.name}</li>`).join("");
+      const rows = items.map((item) => `<li>${esc(item.quantity)} × ${esc(item.name)}</li>`).join("");
       return {
         subject: email.subject ?? "Your Beach Footprints order is confirmed",
-        html: `<p>Thanks for your order! We've received your payment for order <strong>${data.orderId}</strong>.</p>${rows ? `<ul>${rows}</ul>` : ""}<p>Total: ${data.total}</p><p>We'll email you again once it ships.</p>`,
+        html: `<p>Thanks for your order! We've received your payment for order <strong>${esc(data.orderReference ?? data.orderId)}</strong>.</p>${rows ? `<ul>${rows}</ul>` : ""}<p>Total: ${esc(data.total)}</p><p>We'll email you again once it ships.</p>`,
       };
     }
     case "order-shipped": {
-      const trackingUrl = typeof data.trackingUrl === "string" ? data.trackingUrl : undefined;
-      const tracking = trackingUrl
-        ? `<a href="${trackingUrl}">${data.trackingNumber}</a>`
-        : String(data.trackingNumber ?? "");
+      const trackingUrl = safeUrl(data.trackingUrl);
+      const tracking = trackingUrl ? `<a href="${esc(trackingUrl)}">${esc(data.trackingNumber)}</a>` : esc(data.trackingNumber);
       return {
         subject: email.subject ?? "Your Beach Footprints order has shipped",
-        html: `<p>Your order <strong>${data.orderId}</strong> has shipped via ${data.carrier}.</p><p>Tracking: ${tracking}</p>`,
+        html: `<p>Your order <strong>${esc(data.orderReference ?? data.orderId)}</strong> has shipped via ${esc(data.carrier)}.</p><p>Tracking: ${tracking}</p>`,
       };
     }
     default:
-      return { subject: email.subject ?? email.templateKey, html: `<pre>${JSON.stringify(data, null, 2)}</pre>` };
+      return { subject: email.subject ?? email.templateKey, html: `<pre>${esc(JSON.stringify(data, null, 2))}</pre>` };
   }
 }
 

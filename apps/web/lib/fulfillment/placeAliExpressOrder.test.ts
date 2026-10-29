@@ -13,8 +13,8 @@ interface Calls {
 
 function fakeSupabase(
   fixture: {
-    order?: { id: string; tenant_id: string; shipping_address: unknown } | null;
-    items?: Array<{ quantity: number; variant_id: string; product_variants: { supplier: string | null }[] }>;
+    order?: { id: string; tenant_id: string; status?: string; aliexpress_order_id?: string | null; shipping_address: unknown } | null;
+    items?: Array<{ quantity: number; variant_id: string; product_variants: { supplier: string | null } | { supplier: string | null }[] }>;
   },
   calls: Calls,
 ): SupabaseClient {
@@ -52,7 +52,7 @@ function fakeSupabase(
 }
 
 const ORDER_ID = "order-1";
-const baseOrder = { id: ORDER_ID, tenant_id: "tenant-1", shipping_address: { fullName: "A", line1: "1 St", city: "C", country: "US", phone: "+1" } };
+const baseOrder = { id: ORDER_ID, tenant_id: "tenant-1", status: "PAID", aliexpress_order_id: null, shipping_address: { fullName: "A", line1: "1 St", city: "C", country: "US", phone: "+1" } };
 
 beforeEach(() => {
   fulfillOrder.mockReset();
@@ -71,29 +71,51 @@ describe("placeAliExpressOrder", () => {
     const result = await placeAliExpressOrder(fakeSupabase({ order: { ...baseOrder, shipping_address: null } }, calls), ORDER_ID);
     expect(result.ok).toBe(false);
     expect(result.error).toMatch(/shipping_address/);
+    expect(calls.inserts[0].data).toMatchObject({ event: "order_place_failed" });
   });
 
   it("skips as a success when there are no dropship-engine line items", async () => {
     const calls: Calls = { updates: [], inserts: [] };
-    const items = [{ quantity: 1, variant_id: "v1", product_variants: [{ supplier: "manual" }] }];
+    const items = [{ quantity: 1, variant_id: "v1", product_variants: { supplier: "manual" } }];
     const result = await placeAliExpressOrder(fakeSupabase({ order: baseOrder, items }, calls), ORDER_ID);
     expect(result).toEqual({ ok: true, skipped: true });
     expect(fulfillOrder).not.toHaveBeenCalled();
+    expect(calls.inserts[0].data).toMatchObject({ event: "order_place_skipped" });
+  });
+
+  // Regression: order_items -> product_variants is many-to-one, so PostgREST returns the embed as
+  // an object. Reading it as an array silently skipped every real order.
+  it("places an order whose embedded variant comes back as a single object (the real PostgREST shape)", async () => {
+    const calls: Calls = { updates: [], inserts: [] };
+    const items = [{ quantity: 1, variant_id: "v1", product_variants: { supplier: "dropship-engine" } }];
+    fulfillOrder.mockResolvedValue({ orderId: ORDER_ID, externalOrderId: ORDER_ID, skipped: false, aliexpressOrderId: "ae-1", fulfillmentStatus: "fulfillment_in_progress" });
+    const result = await placeAliExpressOrder(fakeSupabase({ order: baseOrder, items }, calls), ORDER_ID);
+    expect(result).toMatchObject({ ok: true, aliexpressOrderId: "ae-1" });
+    expect(fulfillOrder).toHaveBeenCalledTimes(1);
+  });
+
+  it("still accepts the embed as an array", async () => {
+    const calls: Calls = { updates: [], inserts: [] };
+    const items = [{ quantity: 1, variant_id: "v1", product_variants: [{ supplier: "dropship-engine" }] }];
+    fulfillOrder.mockResolvedValue({ orderId: ORDER_ID, externalOrderId: ORDER_ID, skipped: false, aliexpressOrderId: "ae-2", fulfillmentStatus: "fulfillment_in_progress" });
+    const result = await placeAliExpressOrder(fakeSupabase({ order: baseOrder, items }, calls), ORDER_ID);
+    expect(result).toMatchObject({ ok: true, aliexpressOrderId: "ae-2" });
   });
 
   it("fails closed when the shipping address has no phone", async () => {
     const calls: Calls = { updates: [], inserts: [] };
     const order = { ...baseOrder, shipping_address: { ...baseOrder.shipping_address, phone: undefined } };
-    const items = [{ quantity: 1, variant_id: "v1", product_variants: [{ supplier: "dropship-engine" }] }];
+    const items = [{ quantity: 1, variant_id: "v1", product_variants: { supplier: "dropship-engine" } }];
     const result = await placeAliExpressOrder(fakeSupabase({ order, items }, calls), ORDER_ID);
     expect(result.ok).toBe(false);
     expect(result.error).toMatch(/phone/i);
     expect(fulfillOrder).not.toHaveBeenCalled();
+    expect(calls.inserts[0].data).toMatchObject({ event: "order_place_failed" });
   });
 
   it("places the order, mirrors the result, and logs order_placed", async () => {
     const calls: Calls = { updates: [], inserts: [] };
-    const items = [{ quantity: 2, variant_id: "v1", product_variants: [{ supplier: "dropship-engine" }] }];
+    const items = [{ quantity: 2, variant_id: "v1", product_variants: { supplier: "dropship-engine" } }];
     fulfillOrder.mockResolvedValue({ orderId: ORDER_ID, externalOrderId: ORDER_ID, skipped: false, aliexpressOrderId: "ae-123", fulfillmentStatus: "fulfillment_in_progress" });
 
     const result = await placeAliExpressOrder(fakeSupabase({ order: baseOrder, items }, calls), ORDER_ID);
@@ -110,12 +132,28 @@ describe("placeAliExpressOrder", () => {
 
   it("logs order_place_failed and returns ok:false when the engine call throws", async () => {
     const calls: Calls = { updates: [], inserts: [] };
-    const items = [{ quantity: 1, variant_id: "v1", product_variants: [{ supplier: "dropship-engine" }] }];
+    const items = [{ quantity: 1, variant_id: "v1", product_variants: { supplier: "dropship-engine" } }];
     fulfillOrder.mockRejectedValue(new Error("engine unreachable"));
 
     const result = await placeAliExpressOrder(fakeSupabase({ order: baseOrder, items }, calls), ORDER_ID);
 
     expect(result).toEqual({ ok: false, error: "engine unreachable" });
     expect(calls.inserts[0].data).toMatchObject({ event: "order_place_failed", detail: { error: "engine unreachable" } });
+  });
+
+  it("refuses to place an order that hasn't been paid", async () => {
+    const calls: Calls = { updates: [], inserts: [] };
+    const items = [{ quantity: 1, variant_id: "v1", product_variants: { supplier: "dropship-engine" } }];
+    const result = await placeAliExpressOrder(fakeSupabase({ order: { ...baseOrder, status: "PENDING_PAYMENT" }, items }, calls), ORDER_ID);
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/PENDING_PAYMENT/);
+    expect(fulfillOrder).not.toHaveBeenCalled();
+  });
+
+  it("does not place an order that already has a supplier order", async () => {
+    const calls: Calls = { updates: [], inserts: [] };
+    const result = await placeAliExpressOrder(fakeSupabase({ order: { ...baseOrder, aliexpress_order_id: "ae-9" } }, calls), ORDER_ID);
+    expect(result).toEqual({ ok: true, skipped: true, aliexpressOrderId: "ae-9" });
+    expect(fulfillOrder).not.toHaveBeenCalled();
   });
 });

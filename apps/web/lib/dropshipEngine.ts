@@ -122,11 +122,16 @@ function requireEnv(name: string): string {
   return value;
 }
 
+const ENGINE_TIMEOUT_MS = 25_000;
+
 async function engineFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const baseUrl = requireEnv("DROPSHIP_ENGINE_URL").replace(/\/$/, "");
   const apiKey = requireEnv("DROPSHIP_ENGINE_API_KEY");
 
+  // Bounded: placement runs inside the Stripe webhook, and an engine that hangs would otherwise
+  // hold that invocation until the platform kills it — after the order is already marked paid.
   const res = await fetch(`${baseUrl}${path}`, {
+    signal: AbortSignal.timeout(ENGINE_TIMEOUT_MS),
     ...init,
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}`, ...init?.headers },
   });

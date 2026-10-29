@@ -4,8 +4,13 @@ import { createServiceRoleSupabaseClient } from "@trend/db";
 import { stripe } from "@/lib/checkout/stripe";
 import { placeAliExpressOrder } from "@/lib/fulfillment/placeAliExpressOrder";
 import { getEmailProvider } from "@/lib/email/getEmailProvider";
+import { orderReference } from "@/lib/orderReference";
+import { formatMoney } from "@/lib/format";
 
 export const runtime = "nodejs";
+// Payment, stock, email and supplier placement all run in one delivery — give it room, rather than
+// risk the platform killing it after the order is already marked paid.
+export const maxDuration = 60;
 
 /**
  * Stripe's payment callbacks — the only place an order is ever marked paid.
@@ -59,11 +64,40 @@ export async function POST(request: Request) {
         const session = event.data.object as Stripe.Checkout.Session;
         const orderId = session.metadata?.orderId;
         if (orderId) {
-          await supabase.from("payments").update({ status: "FAILED" }).eq("provider", "stripe").eq("provider_ref", session.id);
-          // The order is left as-is rather than deleted: an abandoned checkout is a real record,
-          // and the customer may retry.
-          console.log(`[webhooks/stripe] order ${orderId} not paid (${event.type})`);
+          const { error: paymentError } = await supabase.from("payments").update({ status: "FAILED" }).eq("provider", "stripe").eq("provider_ref", session.id);
+          if (paymentError) throw new Error(`Could not mark payment failed: ${paymentError.message}`);
+          // Kept as a record rather than deleted, but closed: an order left PENDING_PAYMENT forever
+          // inflates the dashboard's pending count and still looks like it might be paid. Only a
+          // still-pending order is touched, so a late event can't cancel one that did get paid.
+          const { error: cancelError } = await supabase
+            .from("orders")
+            .update({ status: "CANCELED" })
+            .eq("id", orderId)
+            .eq("status", "PENDING_PAYMENT");
+          if (cancelError) throw new Error(`Could not cancel unpaid order ${orderId}: ${cancelError.message}`);
+          console.log(`[webhooks/stripe] order ${orderId} not paid (${event.type}) — canceled`);
         }
+        break;
+      }
+
+      case "charge.refunded": {
+        await recordRefund(supabase, event.data.object as Stripe.Charge);
+        break;
+      }
+
+      case "charge.dispute.created": {
+        const dispute = event.data.object as Stripe.Dispute;
+        const intentId = typeof dispute.payment_intent === "string" ? dispute.payment_intent : dispute.payment_intent?.id;
+        const order = intentId ? await orderForPaymentIntent(supabase, intentId) : null;
+        if (order) {
+          await supabase.from("fulfillment_logs").insert({
+            tenant_id: order.tenant_id,
+            order_id: order.id,
+            event: "payment_disputed",
+            detail: { reason: dispute.reason, amount: dispute.amount, currency: dispute.currency, disputeId: dispute.id },
+          });
+        }
+        console.warn(`[webhooks/stripe] dispute ${dispute.id} opened on ${intentId} (order ${order?.id ?? "unknown"})`);
         break;
       }
 
@@ -122,11 +156,25 @@ async function markOrderPaid(supabase: ReturnType<typeof createServiceRoleSupaba
     return;
   }
 
-  await supabase
+  const { data: paymentRows, error: paymentError } = await supabase
     .from("payments")
     .update({ status: "SUCCEEDED", provider_ref: paymentIntentId ?? session.id, amount: session.amount_total ?? order.total })
     .eq("provider", "stripe")
-    .eq("provider_ref", session.id);
+    .eq("provider_ref", session.id)
+    .select("id");
+  // The order is already claimed as PAID, so this can't throw (a retry would skip the order as a
+  // duplicate and lose the rest of this handler). Record the payment instead, so a refund can find
+  // it by payment intent later.
+  if (paymentError || !paymentRows || paymentRows.length === 0) {
+    console.error(`[webhooks/stripe] order ${orderId}: no payment row for session ${session.id} (${paymentError?.message ?? "none matched"}) — inserting one`);
+    await supabase.from("payments").insert({
+      order_id: orderId,
+      provider: "stripe",
+      provider_ref: paymentIntentId ?? session.id,
+      status: "SUCCEEDED",
+      amount: session.amount_total ?? order.total,
+    });
+  }
 
   // Draw down stock for what was actually bought. Read-then-write rather than an atomic
   // decrement because PostgREST has no expression update; oversell risk is bounded by the
@@ -197,11 +245,69 @@ async function sendOrderConfirmation(
       templateKey: "order-confirmation",
       data: {
         orderId,
-        total: `${(total / 100).toFixed(2)} ${currency.toUpperCase()}`,
+        orderReference: orderReference(orderId),
+        total: formatMoney(total, currency.toUpperCase()),
         items: items.map((item) => ({ name: item.title, quantity: item.quantity })),
       },
     });
   } catch (error) {
     console.error(`[webhooks/stripe] order ${orderId} PAID but confirmation email failed: ${error instanceof Error ? error.message : error}`);
   }
+}
+
+async function orderForPaymentIntent(
+  supabase: ReturnType<typeof createServiceRoleSupabaseClient>,
+  intentId: string,
+): Promise<{ id: string; tenant_id: string; status: string; aliexpress_order_id: string | null; total: number } | null> {
+  const { data: payment } = await supabase.from("payments").select("order_id").eq("provider", "stripe").eq("provider_ref", intentId).maybeSingle();
+  if (!payment) return null;
+  const { data: order } = await supabase
+    .from("orders")
+    .select("id, tenant_id, status, aliexpress_order_id, total")
+    .eq("id", payment.order_id as string)
+    .maybeSingle();
+  return (order as { id: string; tenant_id: string; status: string; aliexpress_order_id: string | null; total: number } | null) ?? null;
+}
+
+/**
+ * A refund issued in the Stripe dashboard used to change nothing here: the order stayed PAID or
+ * FULFILLING, still counted as revenue, and a later shipment still emailed the customer. Now the
+ * payment and (for a full refund) the order are marked refunded, and the refund is logged — with
+ * a warning if the supplier order was already placed, since cancelling that is a manual step on
+ * AliExpress that nothing here can do.
+ */
+async function recordRefund(supabase: ReturnType<typeof createServiceRoleSupabaseClient>, charge: Stripe.Charge) {
+  const intentId = typeof charge.payment_intent === "string" ? charge.payment_intent : charge.payment_intent?.id;
+  if (!intentId) return;
+  const order = await orderForPaymentIntent(supabase, intentId);
+  if (!order) {
+    console.warn(`[webhooks/stripe] refund on ${intentId} matches no order`);
+    return;
+  }
+
+  const fullyRefunded = charge.refunded || charge.amount_refunded >= charge.amount;
+  const { error: paymentError } = await supabase
+    .from("payments")
+    .update({ status: fullyRefunded ? "REFUNDED" : "PARTIALLY_REFUNDED" })
+    .eq("provider", "stripe")
+    .eq("provider_ref", intentId);
+  if (paymentError) throw new Error(`Could not record refund on payment: ${paymentError.message}`);
+
+  if (fullyRefunded && order.status !== "REFUNDED") {
+    const { error: orderError } = await supabase.from("orders").update({ status: "REFUNDED" }).eq("id", order.id);
+    if (orderError) throw new Error(`Could not mark order ${order.id} refunded: ${orderError.message}`);
+  }
+
+  await supabase.from("fulfillment_logs").insert({
+    tenant_id: order.tenant_id,
+    order_id: order.id,
+    event: fullyRefunded ? "refunded" : "partially_refunded",
+    supplier_order_id: order.aliexpress_order_id,
+    detail: {
+      amountRefunded: charge.amount_refunded,
+      currency: charge.currency,
+      ...(order.aliexpress_order_id ? { action: "Supplier order already placed — cancel it on AliExpress if it hasn't shipped." } : {}),
+    },
+  });
+  console.log(`[webhooks/stripe] order ${order.id} ${fullyRefunded ? "refunded" : "partially refunded"} (${charge.amount_refunded} ${charge.currency})`);
 }

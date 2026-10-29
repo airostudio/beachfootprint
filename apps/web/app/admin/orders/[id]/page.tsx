@@ -55,8 +55,11 @@ export default async function AdminOrderDetailPage({ params }: { params: { id: s
             >
               View on AliExpress ↗
             </a>
-          ) : (
+          ) : order.status === "PAID" ? (
             <PlaceAliExpressOrderButton orderId={order.id} />
+          ) : (
+            // Only a paid order can go to the supplier — the server refuses anything else too.
+            <span className="text-xs text-stone-500">Not placed with AliExpress (order is {order.status.replace(/_/g, " ").toLowerCase()})</span>
           )}
           <DeleteOrderButton
             orderId={order.id}
