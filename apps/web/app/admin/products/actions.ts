@@ -1,6 +1,8 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
+import { linkToNewArrivals } from "@/lib/import/newArrivalsLink";
 import { db, getTenantId } from "@/lib/data/client";
 import { DEMO_PRODUCT_HANDLES } from "@/lib/data/demoProducts";
 import { NEW_ARRIVALS_HANDLE, newArrivalsCutoffIso } from "@/lib/newArrivals";
@@ -346,4 +348,43 @@ function revalidateProductViews(): void {
   revalidatePath("/admin");
   revalidatePath("/shop");
   revalidatePath("/");
+}
+
+/**
+ * "New Product" had no handler. Creates a DRAFT product with one default variant and a stock row
+ * — the editor edits variants in place but never creates them, so a product made without one
+ * could never be priced — then opens it in the editor. DRAFT so nothing half-filled reaches the
+ * storefront; it's published from the editor once it has a title, price and image.
+ */
+export async function createProduct(): Promise<void> {
+  const tenantId = await getTenantId();
+  const supabase = db();
+  const suffix = Math.random().toString(36).slice(2, 8);
+
+  const { data: settings } = await supabase.from("tenant_settings").select("base_currency").eq("tenant_id", tenantId).maybeSingle();
+  const currency = ((settings?.base_currency as string | undefined) ?? "USD").toUpperCase();
+
+  const { data: product, error } = await supabase
+    .from("products")
+    .insert({ tenant_id: tenantId, title: "Untitled product", handle: `new-product-${suffix}`, status: "DRAFT", product_type: "STANDARD", stock_policy: "IN_STOCK" })
+    .select("id")
+    .single();
+  if (error || !product) throw new Error(`Could not create the product: ${error?.message}`);
+  const productId = product.id as string;
+
+  const { data: variant, error: variantError } = await supabase
+    .from("product_variants")
+    .insert({ product_id: productId, sku: `NEW-${suffix}`.toUpperCase(), price: 0, currency, is_active: true })
+    .select("id")
+    .single();
+  if (variantError || !variant) {
+    await supabase.from("products").delete().eq("id", productId);
+    throw new Error(`Could not create the product's variant: ${variantError?.message}`);
+  }
+  const { error: stockError } = await supabase.from("inventory_items").insert({ variant_id: variant.id as string, stock_on_hand: 0 });
+  if (stockError) throw new Error(`Product created but its stock row failed: ${stockError.message}`);
+
+  await linkToNewArrivals(supabase, tenantId, productId);
+  revalidateProductViews();
+  redirect(`/admin/products/${productId}`);
 }

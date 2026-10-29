@@ -5,7 +5,7 @@ import { getCategories } from "@/lib/data/categories";
 import { NEW_ARRIVALS_HANDLE } from "@/lib/newArrivals";
 import { countDemoProducts } from "@/lib/data/demoProducts";
 import ProductsTable from "@/components/admin/ProductsTable";
-import { publishAllDrafts, removeDemoProducts, setCatalogueCurrency, sweepNewArrivals } from "./actions";
+import { createProduct, publishAllDrafts, removeDemoProducts, setCatalogueCurrency, sweepNewArrivals } from "./actions";
 import { NEW_ARRIVALS_DAYS } from "@/lib/newArrivals";
 
 export const dynamic = "force-dynamic";
@@ -72,7 +72,11 @@ export default async function AdminProductsPage() {
           <Link href="/admin/products/import" className="btn-secondary">
             Import Products
           </Link>
-          <button className="btn-primary">New Product</button>
+          <form action={createProduct}>
+            <button type="submit" className="btn-primary">
+              New Product
+            </button>
+          </form>
         </div>
       </div>
       <div className="text-xs text-stone-500 mb-4 flex flex-wrap gap-x-4 gap-y-1">
