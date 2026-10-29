@@ -3,6 +3,7 @@ import { getAdminOrders } from "@/lib/data/admin";
 import { aliexpressOrderUrl } from "@/lib/aliexpressOrderUrl";
 import { formatMoney } from "@/lib/format";
 import DeleteOrderButton from "@/components/admin/DeleteOrderButton";
+import SyncTrackingButton from "@/components/admin/SyncTrackingButton";
 
 export const dynamic = "force-dynamic";
 
@@ -24,7 +25,10 @@ export default async function AdminOrdersPage() {
   return (
     <div>
       <div className="flex justify-between items-start mb-6">
-        <h1 className="font-serif text-3xl">Orders</h1>
+        <div className="flex items-center gap-4">
+          <h1 className="font-serif text-3xl">Orders</h1>
+          <SyncTrackingButton />
+        </div>
         {orders.length > 0 && (
           <p className="text-xs text-stone-500 text-right">
             {awaitingFulfillment > 0 && (

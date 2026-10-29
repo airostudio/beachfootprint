@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import CheckoutSettingsCard from "@/components/admin/CheckoutSettingsCard";
+import StoreContactCard from "@/components/admin/StoreContactCard";
 
 interface PaymentsStatus {
   stripe: {
@@ -14,6 +15,7 @@ interface PaymentsStatus {
   };
   sellingCurrency: string | null;
   storeCurrency: string | null;
+  email?: { configured: boolean; apiKeySet: boolean; fromSet: boolean };
   checkoutImplemented: boolean;
 }
 
@@ -39,7 +41,11 @@ const CURRENCIES = ["USD", "AUD", "NZD", "GBP", "EUR", "CAD", "SGD"];
 
 export default function PaymentsSettingsPage() {
   const [status, setStatus] = useState<PaymentsStatus | null>(null);
+  // A load failure replaces the page; a save warning (e.g. the engine didn't pick up a currency
+  // change) is shown inline. Both used to share one state, so a successful save that only carried
+  // a warning blanked the whole screen.
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [currency, setCurrency] = useState<string>("");
   const [savingCurrency, setSavingCurrency] = useState(false);
   const [currencySavedAt, setCurrencySavedAt] = useState<string | null>(null);
@@ -68,7 +74,7 @@ export default function PaymentsSettingsPage() {
   async function saveCurrency(next: string) {
     setCurrency(next);
     setSavingCurrency(true);
-    setError(null);
+    setNotice(null);
     try {
       const res = await fetch("/api/admin/store-currency", {
         method: "PUT",
@@ -80,12 +86,12 @@ export default function PaymentsSettingsPage() {
       setStatus((prev) => (prev ? { ...prev, sellingCurrency: next } : prev));
       setCurrencySavedAt(new Date().toLocaleTimeString());
       if (!data.engineSynced) {
-        setError(
+        setNotice(
           `Saved ${next} for this store, but the dropship engine didn't pick it up${data.engineError ? ` (${data.engineError})` : ""} — imported products will keep arriving in the old currency until it syncs.`,
         );
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not save the currency");
+      setNotice(err instanceof Error ? err.message : "Could not save the currency");
     } finally {
       setSavingCurrency(false);
     }
@@ -94,8 +100,9 @@ export default function PaymentsSettingsPage() {
   if (error) return <p className="text-sm text-red-600">{error}</p>;
   if (!status) return <p className="text-sm text-stone-500">Checking payment configuration…</p>;
 
-  const allSet =
-    status.stripe.secretKeyConfigured && status.stripe.publishableKeyConfigured && status.stripe.webhookSecretConfigured;
+  // Checkout is Stripe-hosted, so the publishable key isn't needed to take payments — requiring
+  // it made this screen report "can't take payments" on a store that could.
+  const allSet = status.stripe.secretKeyConfigured && status.stripe.webhookSecretConfigured;
 
   return (
     <div className="max-w-2xl">
@@ -151,7 +158,7 @@ export default function PaymentsSettingsPage() {
           label="Publishable key"
           ok={status.stripe.publishableKeyConfigured}
           envVar="NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY"
-          detail="safe to send to the browser; used by Stripe's card fields."
+          detail="optional — checkout uses Stripe's hosted page, so payments work without it."
         />
         <StatusRow
           label="Webhook signing secret"
@@ -173,6 +180,27 @@ export default function PaymentsSettingsPage() {
           </p>
         )}
       </section>
+
+      {status.email && (
+        <section className="card p-6 mb-6">
+          <h2 className="font-serif text-xl mb-2">Customer emails</h2>
+          {!status.email.configured && (
+            <p className="text-sm text-amber-800 bg-amber-50 border border-amber-300 px-3 py-2 mb-3">
+              Emails are not being sent. Order confirmations, shipping notices and support notifications are only written
+              to the server log until both values below are set in Vercel.
+            </p>
+          )}
+          <StatusRow label="Resend API key" ok={status.email.apiKeySet} envVar="RESEND_API_KEY" detail="from resend.com → API Keys." />
+          <StatusRow
+            label="From address"
+            ok={status.email.fromSet}
+            envVar="EMAIL_FROM"
+            detail='e.g. "Beach Footprints <orders@beachfootprint.com.au>" — the domain must be verified in Resend.'
+          />
+        </section>
+      )}
+
+      {notice && <p className="text-sm text-amber-800 bg-amber-50 border border-amber-300 px-3 py-2 mb-6">{notice}</p>}
 
       <section className="card p-6">
         <h2 className="font-serif text-xl mb-4">Currency</h2>
@@ -229,6 +257,7 @@ export default function PaymentsSettingsPage() {
       </section>
 
       <CheckoutSettingsCard />
+      <StoreContactCard />
     </div>
   );
 }

@@ -42,9 +42,14 @@ export async function GET() {
   try {
     const supabase = createServiceRoleSupabaseClient();
     const tenantId = await resolveTenantId(supabase);
-    const { data } = await supabase.from("product_variants").select("currency").limit(1).maybeSingle();
+    // Scoped to this store's products — this used to read any variant in the database.
+    const { data } = await supabase
+      .from("product_variants")
+      .select("currency, products!inner(tenant_id)")
+      .eq("products.tenant_id", tenantId)
+      .limit(1)
+      .maybeSingle();
     storeCurrency = (data?.currency as string | undefined) ?? null;
-    void tenantId;
   } catch {
     // Same — best-effort context, not the point of the endpoint.
   }
@@ -64,6 +69,13 @@ export async function GET() {
     },
     sellingCurrency,
     storeCurrency,
+    // Without these, every customer email (order confirmation, shipping, support notifications)
+    // is only written to the server log — nothing reaches an inbox, and nothing else says so.
+    email: {
+      configured: Boolean(process.env.RESEND_API_KEY && process.env.EMAIL_FROM),
+      apiKeySet: Boolean(process.env.RESEND_API_KEY),
+      fromSet: Boolean(process.env.EMAIL_FROM),
+    },
     // Checkout is wired to Stripe (see /api/checkout/session and /api/webhooks/stripe); whether it
     // can actually take money now depends only on the credentials above.
     checkoutImplemented: true,

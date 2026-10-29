@@ -28,9 +28,12 @@ export default function AliExpressAuthPage() {
         if (typeof data.connected === "boolean") {
           setConnected(data.connected);
           setConnectedAt(data.connectedAt ?? null);
+        } else {
+          // A failed status call used to leave "Checking connection status…" on screen forever.
+          setError(typeof data.error === "string" ? `Couldn't check the AliExpress connection: ${data.error}` : "Couldn't check the AliExpress connection.");
         }
       })
-      .catch(() => setConnected(null));
+      .catch(() => setError("Couldn't reach the dropship engine to check the AliExpress connection."));
   }, []);
 
   async function connect() {
@@ -116,7 +119,7 @@ export default function AliExpressAuthPage() {
             {busy === "connect" ? "Redirecting…" : "Connect AliExpress"}
           </button>
         )}
-        {connected === null && <p className="text-sm text-stone-500">Checking connection status…</p>}
+        {connected === null && !error && <p className="text-sm text-stone-500">Checking connection status…</p>}
       </div>
 
       {error && <p className="text-sm text-red-600 mb-6">{error}</p>}

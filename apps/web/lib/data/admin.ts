@@ -13,22 +13,27 @@ export interface DashboardKpis {
 
 const REVENUE_STATUSES = ["PAID", "FULFILLING", "FULFILLED", "DELIVERED"];
 
-/** All real — this store has no live checkout wired up yet (see README), so these are legitimately zero until orders exist. */
+/** Live figures for the admin dashboard, all scoped to this tenant. */
 export async function getDashboardKpis(): Promise<DashboardKpis> {
   const tenantId = await getTenantId();
   const supabase = db();
   const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
 
-  const [{ data: orders }, { count: pendingOrders }, { count: fulfillingOrders }, { data: productIds }] = await Promise.all([
+  const [{ data: orders }, { count: pendingOrders }, { count: fulfillingOrders }, { data: productIds }, { data: settings }] = await Promise.all([
     supabase.from("orders").select("total, currency, status").eq("tenant_id", tenantId).gte("created_at", since),
     supabase.from("orders").select("id", { count: "exact", head: true }).eq("tenant_id", tenantId).eq("status", "PENDING_PAYMENT"),
     supabase.from("orders").select("id", { count: "exact", head: true }).eq("tenant_id", tenantId).eq("status", "FULFILLING"),
-    supabase.from("products").select("id").eq("tenant_id", tenantId),
+    // Archived products are out of the catalogue — their stock levels aren't a reorder signal.
+    supabase.from("products").select("id").eq("tenant_id", tenantId).neq("status", "ARCHIVED"),
+    supabase.from("tenant_settings").select("base_currency").eq("tenant_id", tenantId).maybeSingle(),
   ]);
 
-  const revenueOrders = (orders ?? []).filter((o) => REVENUE_STATUSES.includes(o.status as string));
+  // Revenue is summed in the store's own currency only. Adding totals across currencies (this
+  // store has paid orders in both USD and CNY) and labelling the sum with whichever came first
+  // produced a meaningless figure.
+  const currency = ((settings?.base_currency as string | undefined) ?? "USD").toUpperCase();
+  const revenueOrders = (orders ?? []).filter((o) => REVENUE_STATUSES.includes(o.status as string) && (o.currency as string).toUpperCase() === currency);
   const revenueCents30d = revenueOrders.reduce((sum, o) => sum + (o.total as number), 0);
-  const currency = (revenueOrders[0]?.currency as string) ?? "USD";
 
   let lowStockItems = 0;
   const ids = ((productIds ?? []) as { id: string }[]).map((p) => p.id);
