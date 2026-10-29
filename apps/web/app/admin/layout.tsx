@@ -1,36 +1,22 @@
 import Link from "next/link";
 import { LogoMark } from "@/components/Logo";
-
-const sections = [
-  { href: "/admin", label: "Dashboard" },
-  { href: "/admin/products", label: "Products" },
-  { href: "/admin/categories", label: "Categories" },
-  { href: "/admin/orders", label: "Orders" },
-  { href: "/admin/reviews", label: "Reviews" },
-  { href: "/admin/support", label: "Support" },
-  { href: "/admin/cms", label: "CMS & Banners" },
-  { href: "/admin/payments", label: "Payments" },
-  { href: "/admin/aliexpress", label: "AliExpress" },
-  { href: "/admin/aliexpress/staging", label: "AliExpress Staging" },
-  { href: "/admin/aliexpress/settings", label: "Dropship Settings" },
-];
+import AdminNav from "@/components/admin/AdminNav";
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-screen bg-warm-100">
       <div className="bg-ink-950 text-warm-50">
-        <div className="container-page h-14 flex items-center gap-8 text-sm min-w-0">
-          <span className="inline-flex items-center gap-2 shrink-0">
-            <LogoMark className="h-7 w-7" />
-            <span className="font-serif text-lg whitespace-nowrap">Mira &amp; Muse Admin</span>
-          </span>
-          <nav className="flex gap-6 overflow-x-auto whitespace-nowrap">
-            {sections.map((s) => (
-              <Link key={s.href} href={s.href} className="text-stone-300 hover:text-warm-50">
-                {s.label}
-              </Link>
-            ))}
-          </nav>
+        <div className="container-page py-3 flex flex-col gap-3">
+          <div className="flex items-center justify-between gap-4">
+            <span className="inline-flex items-center gap-2">
+              <LogoMark className="h-7 w-7" />
+              <span className="font-serif text-lg whitespace-nowrap">Mira &amp; Muse Admin</span>
+            </span>
+            <Link href="/" className="text-xs text-stone-400 hover:text-warm-50 whitespace-nowrap">
+              View store ↗
+            </Link>
+          </div>
+          <AdminNav />
         </div>
       </div>
       <div className="container-page py-10">{children}</div>
