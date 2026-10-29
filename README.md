@@ -1,6 +1,6 @@
 # Mira & Muse
 
-Storefront domain: [shopmiramuse.com](https://shopmiramuse.com). (The repository and the internal tenant slug `beach-footprints-demo` keep their original names — the slug is what `DEFAULT_TENANT_SLUG` points at.)
+Storefront domain: [www.shopmiramuse.com](https://www.shopmiramuse.com). (The repository and the internal tenant slug `beach-footprints-demo` keep their original names — the slug is what `DEFAULT_TENANT_SLUG` points at.)
 
 A boho surf-culture lifestyle e-commerce platform — apparel and accessories, editorial lookbook feel (warm sand, terracotta, sage ocean, surf foam, driftwood tones), sourced via an AliExpress dropshipping pipeline. Mira & Muse is the **pilot store** for the [WebeseDrop dropshipping engine](https://github.com/airostudio/webesedrop), a store-agnostic dropshipping backend that any storefront platform can connect to; this app talks to it over REST + webhooks like any other connected store would, never through a shared database or shared code.
 
