@@ -11,7 +11,7 @@
 -- content for good. Safe to re-run — a no-op once already empty.
 -- ============================================================
 
-update tenants set name = 'Beach Footprints' where slug = 'beach-footprints-demo';
+update tenants set name = 'Mira & Muse' where slug = 'beach-footprints-demo';
 
 -- Cascades to product_variants, inventory_items, product_media, product_specs,
 -- product_categories, compatibility_links, bundle_items, reviews,

@@ -20,8 +20,8 @@
 
 /** The specifics a lawyer will ask for. Replace before launch — see README. */
 export const TRADING_ENTITY = {
-  storeName: "Beach Footprints",
-  website: "beachfootprint.com.au",
+  storeName: "Mira & Muse",
+  website: "shopmiramuse.com",
   /** Registered company/sole-trader name and ABN, once confirmed. */
   legalName: null as string | null,
   abn: null as string | null,

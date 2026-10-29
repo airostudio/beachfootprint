@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Logo } from "@/components/Logo";
 
 export interface NavCategory {
   handle: string;
@@ -43,7 +44,7 @@ export default function Footer({ categories, freeShippingNote }: { categories: N
     <footer className="border-t border-stone-200 bg-ink-950 text-warm-100 mt-24">
       <div className="container-page py-16 grid gap-12 sm:grid-cols-2 lg:grid-cols-4">
         <div>
-          <p className="font-serif text-2xl mb-4">Beach Footprints</p>
+          <Logo className="mb-4 text-warm-50" markClassName="h-10 w-10" />
           <p className="text-sm text-stone-400 leading-relaxed max-w-xs">
             Boho surf-culture apparel and accessories, woven and hand-dyed for warm sand and salt air.
           </p>
@@ -65,7 +66,7 @@ export default function Footer({ categories, freeShippingNote }: { categories: N
       </div>
       <div className="border-t border-ink-800">
         <div className="container-page py-6 text-xs text-stone-500 flex flex-col sm:flex-row justify-between gap-2">
-          <p>© {new Date().getFullYear()} Beach Footprints. All rights reserved.</p>
+          <p>© {new Date().getFullYear()} Mira &amp; Muse. All rights reserved.</p>
           {freeShippingNote && <p>{freeShippingNote}</p>}
         </div>
       </div>

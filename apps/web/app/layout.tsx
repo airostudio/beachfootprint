@@ -9,13 +9,13 @@ import { getFreeShippingNote } from "@/lib/data/settings";
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
-  title: { default: "Beach Footprints — Boho Surf Lifestyle", template: "%s | Beach Footprints" },
+  title: { default: "Mira & Muse — Boho Surf Lifestyle", template: "%s | Mira & Muse" },
   description: "Boho surf-culture apparel and accessories — woven, hand-dyed and built for barefoot mornings.",
   robots: { index: true, follow: true },
   openGraph: {
     type: "website",
-    siteName: "Beach Footprints",
-    title: "Beach Footprints — Boho Surf Lifestyle",
+    siteName: "Mira & Muse",
+    title: "Mira & Muse — Boho Surf Lifestyle",
     description: "Boho surf-culture apparel and accessories for warm sand and salt air.",
   },
 };

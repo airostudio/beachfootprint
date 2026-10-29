@@ -1,5 +1,5 @@
 -- ============================================================
--- Beach Footprints — Demo seed data
+-- Mira & Muse — Demo seed data
 -- Run after supabase/schema.sql, e.g.:
 --   supabase db execute -f supabase/seed.sql
 --
@@ -21,15 +21,15 @@ declare
 begin
   -- ── Tenant ──────────────────────────────────────────────────
   insert into tenants (name, slug, is_active)
-  values ('Beach Footprints Demo', 'beach-footprints-demo', true)
+  values ('Mira & Muse Demo', 'beach-footprints-demo', true)
   returning id into v_tenant_id;
 
   insert into tenant_settings (
     tenant_id, brand_name, base_currency, enabled_currencies, cookie_consent_enabled,
     seo_title_default, seo_desc_default
   ) values (
-    v_tenant_id, 'Beach Footprints', 'USD', array['USD'], true,
-    'Beach Footprints', 'Boho surf lifestyle — apparel and accessories for warm sand and salt air.'
+    v_tenant_id, 'Mira & Muse', 'USD', array['USD'], true,
+    'Mira & Muse', 'Boho surf lifestyle — apparel and accessories for warm sand and salt air.'
   );
 
   insert into tax_settings (tenant_id, mode, is_tax_inclusive, default_rate_bps)

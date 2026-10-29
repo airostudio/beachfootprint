@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { LogoMark } from "@/components/Logo";
 
 const sections = [
   { href: "/admin", label: "Dashboard" },
@@ -19,7 +20,10 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     <div className="min-h-screen bg-warm-100">
       <div className="bg-ink-950 text-warm-50">
         <div className="container-page h-14 flex items-center gap-8 text-sm min-w-0">
-          <span className="font-serif text-lg">Beach Footprints Admin</span>
+          <span className="inline-flex items-center gap-2 shrink-0">
+            <LogoMark className="h-7 w-7" />
+            <span className="font-serif text-lg whitespace-nowrap">Mira &amp; Muse Admin</span>
+          </span>
           <nav className="flex gap-6 overflow-x-auto whitespace-nowrap">
             {sections.map((s) => (
               <Link key={s.href} href={s.href} className="text-stone-300 hover:text-warm-50">

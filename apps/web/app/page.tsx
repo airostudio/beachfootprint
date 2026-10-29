@@ -25,7 +25,7 @@ export default async function HomePage() {
         <HeroSlideshow />
         <div className="absolute inset-0 bg-gradient-to-t from-ink-950/90 via-ink-950/20 to-transparent" />
         <div className="container-page relative pb-16 sm:pb-24 text-warm-50">
-          <p className="eyebrow text-stone-300 mb-4">Beach Footprints</p>
+          <p className="eyebrow text-stone-300 mb-4">Mira &amp; Muse</p>
           <h1 className="font-serif text-5xl sm:text-7xl leading-[1.05] max-w-2xl">{heroBanner.headline}</h1>
           <p className="mt-6 max-w-lg text-stone-200 text-base leading-relaxed">{heroBanner.body}</p>
           <div className="mt-10 flex flex-wrap gap-4">
@@ -71,14 +71,14 @@ export default async function HomePage() {
             <p className="eyebrow text-stone-400 mb-4">The Journal</p>
             <h2 className="font-serif text-4xl mb-6 leading-tight">Slow mornings, sun-warmed fabric, salt in the air.</h2>
             <p className="text-stone-300 leading-relaxed mb-8 max-w-md">
-              Style guides, care tips and packing lists for a boho, barefoot life — read the latest from the Beach Footprints journal.
+              Style guides, care tips and packing lists for a boho, barefoot life — read the latest from the Mira &amp; Muse journal.
             </p>
             <Link href="/guides" className="btn-primary bg-warm-50 text-ink-950 hover:bg-stone-200">
               Read the Guides
             </Link>
           </div>
           <div className="relative aspect-[4/3] bg-ink-900">
-            <Image src="https://picsum.photos/seed/beach-journal/1000/750" alt="Beach Footprints lookbook" fill className="object-cover" />
+            <Image src="https://picsum.photos/seed/beach-journal/1000/750" alt="Mira & Muse lookbook" fill className="object-cover" />
           </div>
         </div>
       </section>
