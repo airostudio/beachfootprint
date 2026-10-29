@@ -23,7 +23,9 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   return {
     title: product.title,
     description: product.shortDescription,
-    openGraph: { images: product.isIndexable !== false ? [product.imageUrl] : [] },
+    openGraph: { images: product.isIndexable !== false && product.imageUrl ? [product.imageUrl] : [] },
+    // Left out of the sitemap already; without this the page itself still invited indexing.
+    ...(product.isIndexable === false ? { robots: { index: false, follow: true } } : {}),
   };
 }
 

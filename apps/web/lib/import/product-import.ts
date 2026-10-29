@@ -105,6 +105,16 @@ export async function upsertProductRows(
       continue;
     }
     const handle = rec.data.handle?.trim() ? slugify(rec.data.handle) : slugify(title);
+    if (!handle) {
+      errors.push({ rowNumber: rec.rowNumber, message: "Title has no letters or numbers to build a URL from — add a handle column" });
+      continue;
+    }
+    // Two rows resolving to the same handle in one chunk made the whole batch insert fail on the
+    // unique (tenant, handle) index — every row in the chunk errored, not just the duplicate.
+    if (valid.some((v) => v.handle === handle)) {
+      errors.push({ rowNumber: rec.rowNumber, handle, message: `Duplicate of an earlier row (same handle "${handle}") — skipped` });
+      continue;
+    }
     valid.push({ rowNumber: rec.rowNumber, data: rec.data, handle, priceCents });
   }
 
@@ -152,22 +162,33 @@ export async function upsertProductRows(
       product_type: productType && PRODUCT_TYPES.has(productType) ? productType : "STANDARD",
       short_description: v.data.short_description?.trim() || null,
       description: v.data.description?.trim() || null,
-      status: (v.data.status?.trim().toUpperCase() as "DRAFT" | "PUBLISHED" | "ARCHIVED") || "PUBLISHED",
+      status: normalizeStatus(v.data.status),
       brand: v.data.brand?.trim() || null,
     };
   });
 
-  const { data: insertedProducts, error: productErr } = await supabase
+  let { data: insertedProducts, error: productErr } = await supabase
     .from("products")
     .insert(productPayload)
     .select("id, handle");
 
   if (productErr) {
-    for (const v of toInsert) errors.push({ rowNumber: v.rowNumber, handle: v.handle, message: `Product insert failed: ${productErr.message}` });
-    return { processed: 0, errors, skippedExisting, seenHandles, seenBrands };
+    // One bad row used to fail the whole chunk. Retry row by row so the good rows still land and
+    // each failure is reported against its own line.
+    insertedProducts = [];
+    for (const [i, payload] of productPayload.entries()) {
+      const { data: one, error: oneErr } = await supabase.from("products").insert(payload).select("id, handle").single();
+      if (oneErr || !one) errors.push({ rowNumber: toInsert[i].rowNumber, handle: payload.handle, message: `Product insert failed: ${oneErr?.message}` });
+      else insertedProducts.push(one);
+    }
+    if (insertedProducts.length === 0) return { processed: 0, errors, skippedExisting, seenHandles, seenBrands };
   }
 
   const productIdByHandle = new Map((insertedProducts ?? []).map((p) => [p.handle as string, p.id as string]));
+  // Variants are priced in the store's own currency — a hardcoded "USD" made a CSV import
+  // unbuyable alongside the rest of the catalogue in any store selling in something else.
+  const { data: settings } = await supabase.from("tenant_settings").select("base_currency").eq("tenant_id", tenantId).maybeSingle();
+  const storeCurrency = ((settings?.base_currency as string | undefined) ?? "USD").toUpperCase();
 
   // Downstream steps only ever touch newly-inserted products — existing
   // ones were filtered out above and stay completely untouched.
@@ -181,7 +202,7 @@ export async function upsertProductRows(
         sku: v.data.sku?.trim() || `${v.handle}-DEFAULT`.toUpperCase(),
         price: v.priceCents,
         compare_at: toCents(v.data.compare_at) ?? null,
-        currency: "USD",
+        currency: storeCurrency,
         is_active: true,
       };
     })
@@ -364,4 +385,18 @@ export async function markMissingProductsOutOfStock(
   if (invErr) return { markedProducts: 0, error: invErr.message };
 
   return { markedProducts: missingProducts.length };
+}
+
+/**
+ * Maps whatever a spreadsheet's status column holds to a product status. Exports use all sorts:
+ * Shopify writes "active", a "Published" column often holds TRUE/FALSE. Casting the raw value
+ * straight into the enum failed the insert for anything but the exact enum names. An unrecognised
+ * value lands as DRAFT (visible to the admin, not to customers) rather than failing the row.
+ */
+export function normalizeStatus(raw: string | undefined): "DRAFT" | "PUBLISHED" | "ARCHIVED" {
+  const value = raw?.trim().toLowerCase() ?? "";
+  if (value === "") return "PUBLISHED";
+  if (["published", "publish", "active", "visible", "true", "yes", "1", "live", "instock", "in stock"].includes(value)) return "PUBLISHED";
+  if (["archived", "archive", "deleted", "trash"].includes(value)) return "ARCHIVED";
+  return "DRAFT";
 }

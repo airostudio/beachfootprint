@@ -19,6 +19,12 @@ const skuSchema = z.object({
   marginRate: z.number(),
   stockOnHand: z.number().int().min(0),
   isActive: z.boolean(),
+  // Must be declared: zod strips unknown keys, and the editor sends `skus` on every save — so
+  // without this every edit silently erased the variant options (Color/Size), and confirmed
+  // products came out with no option names or values.
+  options: z
+    .array(z.object({ name: z.string().nullable(), value: z.string(), imageUrl: z.string().nullable().optional() }))
+    .optional(),
 });
 
 // Every field an admin can change on a staged listing before it becomes a real product.
@@ -29,6 +35,9 @@ const patchSchema = z.object({
   seoTitle: z.string().nullable().optional(),
   seoDesc: z.string().nullable().optional(),
   categoryId: z.string().uuid().nullable().optional(),
+  // The engine labels some imports in a currency other than the store's; the admin confirms the
+  // real one here (a relabel — amounts aren't converted) before the product can be confirmed.
+  currencyCode: z.string().regex(/^[A-Z]{3}$/).optional(),
   publish: z.boolean().optional(),
   productType: z.enum(["STANDARD", "ACCESSORY", "CARE_PRODUCT", "BUNDLE", "GIFT_CARD"]).optional(),
   brand: z.string().nullable().optional(),
@@ -43,6 +52,7 @@ const COLUMN_BY_FIELD: Record<string, string> = {
   seoTitle: "seo_title",
   seoDesc: "seo_desc",
   categoryId: "category_id",
+  currencyCode: "currency_code",
   publish: "publish",
   productType: "product_type",
   brand: "brand",

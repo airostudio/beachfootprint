@@ -29,6 +29,12 @@ export async function linkToNewArrivals(supabase: SupabaseClient, tenantId: stri
       .select("id")
       .single();
     categoryId = created?.id as string | undefined;
+    if (!categoryId) {
+      // Two products confirmed at once can both try to create it; the loser hits the unique
+      // handle and should use the winner's row rather than skip New Arrivals.
+      const { data: existing } = await supabase.from("categories").select("id").eq("tenant_id", tenantId).eq("handle", NEW_ARRIVALS_HANDLE).maybeSingle();
+      categoryId = existing?.id as string | undefined;
+    }
   }
   if (!categoryId) return false;
 

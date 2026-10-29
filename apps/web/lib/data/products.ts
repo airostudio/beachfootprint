@@ -308,7 +308,7 @@ export async function getProductsByCategory(handle: string): Promise<ProductSumm
   // A parent category's page also shows everything filed under its subcategories, so visiting
   // "Adult Toys" isn't an empty shell when every product is actually tagged under "Vibrators" —
   // the nav (getNavCategories) already keeps Adult Toys listed on exactly that basis.
-  const { data: children } = await supabase.from("categories").select("id").eq("tenant_id", tenantId).eq("parent_id", category.id);
+  const { data: children } = await supabase.from("categories").select("id").eq("tenant_id", tenantId).eq("parent_id", category.id).eq("is_hidden", false);
   const categoryIds = [category.id, ...((children ?? []) as { id: string }[]).map((c) => c.id)];
 
   let query = supabase
@@ -496,7 +496,9 @@ export async function getProductBySlug(slug: string): Promise<ProductDetail | un
     group.items.push({ label: s.label, value: s.value });
   }
 
-  const galleryRows = (gallery.data ?? []) as { url: string; alt: string | null }[];
+  // Same displayability filter as the listing cards: an http or relative URL here made the gallery
+  // request an image the optimiser rejects (400), breaking the product page's main image.
+  const galleryRows = ((gallery.data ?? []) as { url: string; alt: string | null }[]).filter((g) => isDisplayableImageUrl(g.url));
 
   const linkRows = (linksRes.data ?? []) as { to_product_id: string; relation_type: string }[];
   const accessoryProductIds = linkRows
@@ -530,7 +532,7 @@ export async function getProductBySlug(slug: string): Promise<ProductDetail | un
   return {
     ...summary,
     variants,
-    gallery: galleryRows.length > 0 ? galleryRows.map((g) => ({ url: g.url, alt: g.alt ?? summary.title })) : [{ url: summary.imageUrl, alt: summary.imageAlt }],
+    gallery: galleryRows.length > 0 ? galleryRows.map((g) => ({ url: g.url, alt: g.alt ?? summary.title })) : summary.imageUrl ? [{ url: summary.imageUrl, alt: summary.imageAlt }] : [],
     description: row.description ?? summary.shortDescription,
     specGroups,
     whatsIncluded: GENERIC_WHATS_INCLUDED,

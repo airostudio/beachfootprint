@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { createServiceRoleSupabaseClient } from "@trend/db";
 import { resolveTenantId } from "@/lib/import/tenant";
+import { checkCategoryParent, slugifyHandle } from "@/lib/categoryRules";
 
 export const runtime = "nodejs";
 // Never prerender or cache an admin endpoint: Next will happily statically optimise a
@@ -11,7 +12,7 @@ export const dynamic = "force-dynamic";
 
 const patchSchema = z.object({
   name: z.string().min(1).optional(),
-  handle: z.string().min(1).optional(),
+  handle: z.string().min(1).transform(slugifyHandle).refine((v) => v.length > 0, "Handle needs a letter or number").optional(),
   description: z.string().nullable().optional(),
   parentId: z.string().uuid().nullable().optional(),
   position: z.number().int().optional(),
@@ -49,6 +50,10 @@ export async function PATCH(request: Request, { params }: { params: { id: string
   try {
     const supabase = createServiceRoleSupabaseClient();
     const tenantId = await resolveTenantId(supabase);
+    if (parsed.data.parentId) {
+      const problem = await checkCategoryParent(supabase, tenantId, parsed.data.parentId, params.id);
+      if (problem) return NextResponse.json({ error: problem }, { status: 400 });
+    }
     const { data, error } = await supabase
       .from("categories")
       .update(updates)
@@ -81,6 +86,16 @@ export async function DELETE(request: Request, { params }: { params: { id: strin
     if ((count ?? 0) > 0) {
       return NextResponse.json(
         { error: `This category still has ${count} product${count === 1 ? "" : "s"}. Move them out first.` },
+        { status: 409 },
+      );
+    }
+
+    // Deleting a parent used to silently promote its subcategories to the top level
+    // (parent_id is `on delete set null`), reshaping the menu without saying so.
+    const { count: children } = await supabase.from("categories").select("id", { count: "exact", head: true }).eq("parent_id", params.id);
+    if ((children ?? 0) > 0) {
+      return NextResponse.json(
+        { error: `This category has ${children} subcategor${children === 1 ? "y" : "ies"}. Move or delete them first.` },
         { status: 409 },
       );
     }

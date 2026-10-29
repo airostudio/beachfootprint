@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { createServiceRoleSupabaseClient } from "@trend/db";
 import { resolveTenantId } from "@/lib/import/tenant";
+import { checkCategoryParent } from "@/lib/categoryRules";
 
 export const runtime = "nodejs";
 // Never prerender or cache an admin endpoint: Next will happily statically optimise a
@@ -87,6 +88,10 @@ export async function POST(request: Request) {
     const tenantId = await resolveTenantId(supabase);
     const handle = slugify(parsed.data.handle || parsed.data.name);
     if (!handle) return NextResponse.json({ error: "That name doesn't produce a usable URL handle" }, { status: 400 });
+    if (parsed.data.parentId) {
+      const problem = await checkCategoryParent(supabase, tenantId, parsed.data.parentId);
+      if (problem) return NextResponse.json({ error: problem }, { status: 400 });
+    }
 
     const { data, error } = await supabase
       .from("categories")

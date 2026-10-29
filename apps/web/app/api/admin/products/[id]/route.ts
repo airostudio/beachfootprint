@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { createServiceRoleSupabaseClient } from "@trend/db";
 import { resolveTenantId } from "@/lib/import/tenant";
+import { isDisplayableImageUrl } from "@/lib/import/imageUrls";
 
 export const runtime = "nodejs";
 // Never prerender or cache an admin endpoint: Next will happily statically optimise a
@@ -12,7 +13,13 @@ export const dynamic = "force-dynamic";
 /** Everything the admin editor can change on a live product. */
 const patchSchema = z.object({
   title: z.string().min(1).optional(),
-  handle: z.string().min(1).optional(),
+  // Normalised the same way imports create handles, so a typed "My Bag " can't become a URL with
+  // spaces or capitals in it.
+  handle: z
+    .string()
+    .transform((v) => v.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 80))
+    .refine((v) => v.length > 0, "Handle needs at least one letter or number")
+    .optional(),
   shortDescription: z.string().nullable().optional(),
   description: z.string().nullable().optional(),
   seoTitle: z.string().nullable().optional(),
@@ -143,7 +150,7 @@ export async function PATCH(request: Request, { params }: { params: { id: string
     // Variants are updated in place; this editor never creates or deletes them, because a
     // dropshipped variant is mapped to an AliExpress SKU and losing that mapping breaks sync.
     for (const v of parsed.data.variants ?? []) {
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from("product_variants")
         .update({
           price: v.priceCents,
@@ -159,47 +166,74 @@ export async function PATCH(request: Request, { params }: { params: { id: string
           is_active: v.isActive,
         })
         .eq("id", v.id)
-        .eq("product_id", params.id);
+        .eq("product_id", params.id)
+        .select("id");
       if (error) throw new Error(`Could not update variant: ${error.message}`);
-      await supabase.from("inventory_items").upsert({ variant_id: v.id, stock_on_hand: v.stockOnHand }, { onConflict: "variant_id" });
+      // The stock write below is keyed only by variant id. Without this check, a variant id that
+      // isn't this product's (another product's, or another store's) matched nothing above and
+      // then had its stock overwritten anyway.
+      if (!data || data.length === 0) throw new Error(`Variant ${v.id} does not belong to this product`);
+      const { error: stockError } = await supabase
+        .from("inventory_items")
+        .upsert({ variant_id: v.id, stock_on_hand: v.stockOnHand }, { onConflict: "variant_id" });
+      if (stockError) throw new Error(`Could not update stock: ${stockError.message}`);
     }
 
+    // Media, specs and categories are replaced as sets. The new rows go in first and the old ones
+    // are removed after, by id: the old delete-then-insert had no transaction around it, so a
+    // failed insert left the product with no images (or specs, or categories) at all.
     if (parsed.data.media) {
-      await supabase.from("product_media").delete().eq("product_id", params.id);
-      if (parsed.data.media.length > 0) {
-        const { error } = await supabase
-          .from("product_media")
-          .insert(parsed.data.media.map((m, position) => ({ product_id: params.id, url: m.url, alt: m.alt ?? null, position })));
-        if (error) throw new Error(`Could not save images: ${error.message}`);
-      }
+      // An image the storefront can't display (http, protocol-relative) breaks the gallery with
+      // an optimiser 400 — refused here rather than saved.
+      const bad = parsed.data.media.find((m) => !isDisplayableImageUrl(m.url));
+      if (bad) return NextResponse.json({ error: `Image URL must start with https:// — "${bad.url}" can't be shown on the storefront.` }, { status: 400 });
+      await replaceSet(supabase, "product_media", params.id, parsed.data.media.map((m, position) => ({ product_id: params.id, url: m.url, alt: m.alt ?? null, position })), "images");
     }
 
     if (parsed.data.specs) {
-      await supabase.from("product_specs").delete().eq("product_id", params.id);
-      if (parsed.data.specs.length > 0) {
-        const { error } = await supabase
-          .from("product_specs")
-          .insert(parsed.data.specs.map((s, position) => ({ product_id: params.id, group: s.group, label: s.label, value: s.value, position })));
-        if (error) throw new Error(`Could not save specifications: ${error.message}`);
-      }
+      await replaceSet(supabase, "product_specs", params.id, parsed.data.specs.map((s, position) => ({ product_id: params.id, group: s.group, label: s.label, value: s.value, position })), "specifications");
     }
 
     if (parsed.data.categoryIds) {
-      // Errors here used to be discarded, so a category assignment that the database rejected
-      // still came back as a successful save — the product looked filed and simply wasn't.
-      const { error: clearError } = await supabase.from("product_categories").delete().eq("product_id", params.id);
-      if (clearError) throw new Error(`Could not update categories: ${clearError.message}`);
-      if (parsed.data.categoryIds.length > 0) {
+      // Only this store's categories can be linked — the ids come from the request.
+      const wanted = [...new Set(parsed.data.categoryIds)];
+      if (wanted.length > 0) {
+        const { data: valid } = await supabase.from("categories").select("id").eq("tenant_id", tenantId).in("id", wanted);
+        if ((valid ?? []).length !== wanted.length) return NextResponse.json({ error: "One of those categories doesn't exist in this store" }, { status: 400 });
         const { error: linkError } = await supabase
           .from("product_categories")
-          .insert(parsed.data.categoryIds.map((category_id) => ({ product_id: params.id, category_id })));
+          .upsert(wanted.map((category_id) => ({ product_id: params.id, category_id })), { onConflict: "product_id,category_id" });
         if (linkError) throw new Error(`Could not set categories: ${linkError.message}`);
       }
+      let clear = supabase.from("product_categories").delete().eq("product_id", params.id);
+      if (wanted.length > 0) clear = clear.not("category_id", "in", `(${wanted.join(",")})`);
+      const { error: clearError } = await clear;
+      if (clearError) throw new Error(`Could not update categories: ${clearError.message}`);
     }
 
     return NextResponse.json({ ok: true });
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "Could not save product" }, { status: 500 });
+  }
+}
+
+async function replaceSet(
+  supabase: ReturnType<typeof createServiceRoleSupabaseClient>,
+  table: "product_media" | "product_specs",
+  productId: string,
+  rows: Record<string, unknown>[],
+  label: string,
+): Promise<void> {
+  const { data: old, error: readError } = await supabase.from(table).select("id").eq("product_id", productId);
+  if (readError) throw new Error(`Could not read existing ${label}: ${readError.message}`);
+  if (rows.length > 0) {
+    const { error } = await supabase.from(table).insert(rows);
+    if (error) throw new Error(`Could not save ${label}: ${error.message}`);
+  }
+  const oldIds = ((old ?? []) as { id: string }[]).map((r) => r.id);
+  if (oldIds.length > 0) {
+    const { error } = await supabase.from(table).delete().in("id", oldIds);
+    if (error) throw new Error(`Saved new ${label} but could not remove the old ones: ${error.message}`);
   }
 }
 
