@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createServiceRoleSupabaseClient } from "@trend/db";
+import { completeUtf8Length } from "@/lib/import/utf8";
 import { parseCsvChunk, zipCsvRow } from "@trend/core";
 import { upsertProductRows, markMissingProductsOutOfStock, type ProductCsvRecord, type ImportRowError } from "@/lib/import/product-import";
 import { applyColumnMapping } from "@/lib/import/columnMapping";
@@ -28,6 +29,8 @@ interface JobResult {
   seenHandles: string[];
   seenBrands: string[];
   markedOutOfStock?: number;
+  /** Data rows read from the file so far, imported or not — used for accurate error row numbers. */
+  rowsRead?: number;
 }
 
 const MAX_STORED_ERRORS = 200;
@@ -95,12 +98,21 @@ export async function POST(request: Request, { params }: { params: { id: string 
     return NextResponse.json({ error: `Unexpected storage response: ${res.status}` }, { status: 502 });
   }
 
-  const chunkText = await res.text();
+  const rawBytes = new Uint8Array(await res.arrayBuffer());
   const contentRange = res.headers.get("content-range"); // "bytes start-end/total"
   const totalBytes = contentRange ? Number.parseInt(contentRange.split("/")[1], 10) : undefined;
+  const reachedEnd = totalBytes !== undefined ? rangeStart + rawBytes.length >= totalBytes : rawBytes.length < options.chunkBytes;
+
+  // Decode only whole characters; a character split by the range boundary is left for the next
+  // range to fetch in full (the offset below advances only past what was decoded).
+  const usableBytes = reachedEnd ? rawBytes.length : completeUtf8Length(rawBytes);
+  const chunkText = new TextDecoder().decode(rawBytes.subarray(0, usableBytes));
 
   const isFirstChunk = rangeStart === 0;
-  const text = options.carryover + chunkText;
+  let text = options.carryover + chunkText;
+  // A file that doesn't end in a newline (Google Sheets exports, many others) left its last row as
+  // unparsed "leftover" that was then discarded — the final product silently never imported.
+  if (reachedEnd && text.length > 0 && !text.endsWith("\n")) text += "\n";
   const { rows: parsedRows, leftover } = parseCsvChunk(text);
 
   let header = options.header;
@@ -114,8 +126,11 @@ export async function POST(request: Request, { params }: { params: { id: string 
   // apply that here so the rest of the pipeline only ever sees canonical keys. A job without a
   // stored mapping treats the file's own headings as canonical, as imports did before mapping.
   const fieldMap = (job.mapping as { fields?: Record<string, string | null> | null } | null)?.fields ?? null;
+  // Numbered by rows read from the file so far, not rows successfully imported — otherwise every
+  // error after the first skipped row pointed at the wrong line of the spreadsheet.
+  const rowsReadBefore = result.rowsRead ?? result.processedRows ?? 0;
   const records = dataRows.map((row, i) => ({
-    rowNumber: (result.processedRows ?? 0) + i + 1,
+    rowNumber: rowsReadBefore + i + 1,
     data: (header ? applyColumnMapping(zipCsvRow(header, row), fieldMap) : {}) as ProductCsvRecord,
   }));
 
@@ -132,9 +147,7 @@ export async function POST(request: Request, { params }: { params: { id: string 
   // Determine how far into the file we actually consumed. Bytes actually
   // received may be less than requested near EOF (or if the range wasn't
   // honored and the whole remainder came back at once).
-  const bytesReceived = Buffer.byteLength(chunkText, "utf8");
-  const newByteOffset = rangeStart + bytesReceived;
-  const reachedEnd = totalBytes !== undefined ? newByteOffset >= totalBytes : bytesReceived < options.chunkBytes;
+  const newByteOffset = rangeStart + usableBytes;
 
   const nextOptions: JobOptions = {
     byteOffset: newByteOffset,
@@ -159,6 +172,7 @@ export async function POST(request: Request, { params }: { params: { id: string 
 
   const nextResult: JobResult = {
     processedRows: (result.processedRows ?? 0) + chunkOutcome.processed,
+    rowsRead: rowsReadBefore + dataRows.length,
     skippedExisting: (result.skippedExisting ?? 0) + chunkOutcome.skippedExisting,
     errors: [...(result.errors ?? []), ...chunkOutcome.errors].slice(-MAX_STORED_ERRORS),
     seenHandles,
@@ -175,7 +189,7 @@ export async function POST(request: Request, { params }: { params: { id: string 
     );
   }
 
-  await supabase
+  const { error: saveError } = await supabase
     .from("import_jobs")
     .update({
       status: reachedEnd ? "COMPLETED" : "RUNNING",
@@ -184,6 +198,9 @@ export async function POST(request: Request, { params }: { params: { id: string 
       progress,
     })
     .eq("id", params.id);
+  // If the job's new offset isn't saved, the next call would re-read this same chunk — say so
+  // rather than reporting progress that wasn't recorded.
+  if (saveError) return NextResponse.json({ error: `Chunk imported but progress could not be saved: ${saveError.message}` }, { status: 500 });
 
   return NextResponse.json({ done: reachedEnd, progress, processedThisChunk: chunkOutcome.processed, result: nextResult });
 }

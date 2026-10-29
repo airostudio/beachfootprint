@@ -158,9 +158,14 @@ export async function getNavCategories(limit = 6): Promise<NavCategory[]> {
   // the site rather than one. A store with an unreachable database should still serve a header
   // with Shop and Guides in it.
   try {
-    const withProducts = await getCategoriesWithProducts();
-    const top = withProducts.filter((c) => !c.parentHandle);
-    return top
+    // Top-level entries come from ALL visible categories, not just ones with products filed
+    // directly under them: a parent like Adult Toys typically has nothing of its own and
+    // everything in Vibrators, and drawing parents from the populated list dropped that whole
+    // branch from the menu.
+    const [all, withProducts] = await Promise.all([getCategories(), getCategoriesWithProducts()]);
+    const populated = new Set(withProducts.map((c) => c.handle));
+    return all
+      .filter((c) => !c.parentHandle)
       .map((c) => ({
         id: c.id,
         handle: c.handle,
@@ -169,7 +174,7 @@ export async function getNavCategories(limit = 6): Promise<NavCategory[]> {
           .filter((child) => child.parentHandle === c.handle)
           .map((child) => ({ id: child.id, handle: child.handle, name: child.name })),
       }))
-      .filter((c) => c.children.length > 0 || (withProducts.find((w) => w.handle === c.handle)?.productCount ?? 0) > 0)
+      .filter((c) => c.children.length > 0 || populated.has(c.handle))
       .slice(0, limit);
   } catch (error) {
     console.error(`[nav] could not load categories: ${error instanceof Error ? error.message : error}`);

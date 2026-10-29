@@ -35,12 +35,7 @@ const MAX_BYTES = 10 * 1024 * 1024;
  * Every failure is contained: an image that 404s, needs a login it wasn't given, times out, or
  * isn't actually an image is reported and skipped. The product still imports.
  */
-export async function rehostImages(
-  supabase: SupabaseClient,
-  tenantId: string,
-  urls: string[],
-  options: RehostOptions,
-): Promise<RehostOutcome> {
+export async function rehostImages(supabase: SupabaseClient, tenantId: string, urls: string[], options: RehostOptions): Promise<RehostOutcome> {
   const rehosted = new Map<string, string>();
   const failures: { url: string; reason: string }[] = [];
   if (urls.length === 0) return { rehosted, failures };
@@ -51,7 +46,10 @@ export async function rehostImages(
 
   for (const url of urls) {
     if (Date.now() > options.deadline) {
-      failures.push({ url, reason: "ran out of time in this batch — re-run the import to pick it up" });
+      failures.push({
+        url,
+        reason: "ran out of time in this batch — re-run the import to pick it up",
+      });
       continue;
     }
 
@@ -69,92 +67,125 @@ export async function rehostImages(
       // manually (rather than `redirect: "follow"`) specifically so each hop is validated before
       // it's requested, and credentials are only ever sent to the original host — not wherever a
       // redirect happens to point.
-      let response: Response | undefined;
-      for (let hop = 0; hop < 5; hop++) {
-        if (await isBlockedFetchTarget(target)) {
-          failures.push({ url, reason: "points at a private or internal address, which isn't fetched" });
-          response = undefined;
-          break;
-        }
+      // One timer per image, covering every redirect hop AND the body download, capped by what's
+      // left of the batch's budget. The old timer was cleared once headers arrived, so a slow body
+      // (or a DNS lookup, or five slow hops) could run on past the deadline — the cause of import
+      // chunks hitting the 60s function limit.
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), Math.max(1000, Math.min(FETCH_TIMEOUT_MS, options.deadline - Date.now())));
+      try {
+        let response: Response | undefined;
+        for (let hop = 0; hop < 5; hop++) {
+          if (await isBlockedFetchTarget(target)) {
+            failures.push({
+              url,
+              reason: "points at a private or internal address, which isn't fetched",
+            });
+            response = undefined;
+            break;
+          }
 
-        const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
-        let hopResponse: Response;
-        try {
-          hopResponse = await fetch(target, {
+          const hopResponse = await fetch(target, {
             signal: controller.signal,
             headers: authHeader && target.origin === new URL(url).origin ? { Authorization: authHeader } : undefined,
             redirect: "manual",
           });
-        } finally {
-          clearTimeout(timeout);
-        }
 
-        if (hopResponse.status >= 300 && hopResponse.status < 400) {
-          const location = hopResponse.headers.get("location");
-          if (!location) {
-            failures.push({ url, reason: `image host redirected (${hopResponse.status}) without a location` });
-            response = undefined;
-            break;
+          if (hopResponse.status >= 300 && hopResponse.status < 400) {
+            const location = hopResponse.headers.get("location");
+            if (!location) {
+              failures.push({
+                url,
+                reason: `image host redirected (${hopResponse.status}) without a location`,
+              });
+              response = undefined;
+              break;
+            }
+            target = new URL(location, target);
+            continue;
           }
-          target = new URL(location, target);
+
+          response = hopResponse;
+          break;
+        }
+        if (!response) {
+          if (!failures.some((f) => f.url === url)) failures.push({ url, reason: "too many redirects" });
           continue;
         }
 
-        response = hopResponse;
-        break;
-      }
-      if (!response) {
-        if (!failures.some((f) => f.url === url)) failures.push({ url, reason: "too many redirects" });
-        continue;
-      }
+        if (response.status === 401 || response.status === 403) {
+          failures.push({
+            url,
+            reason: authHeader ? "the login was rejected by the image host" : "needs a login — enter one in the import screen",
+          });
+          continue;
+        }
+        if (!response.ok) {
+          failures.push({
+            url,
+            reason: `image host returned ${response.status}`,
+          });
+          continue;
+        }
 
-      if (response.status === 401 || response.status === 403) {
-        failures.push({
-          url,
-          reason: authHeader ? "the login was rejected by the image host" : "needs a login — enter one in the import screen",
+        const contentType = response.headers.get("content-type") ?? "";
+        if (!contentType.startsWith("image/")) {
+          // A login page served with 200 is the classic case: fetching "succeeds" and returns HTML,
+          // which would otherwise be stored as if it were a product photo.
+          failures.push({
+            url,
+            reason: `not an image (server sent ${contentType || "no content type"})`,
+          });
+          continue;
+        }
+
+        // Refuse an oversized image from its declared length before downloading it at all.
+        const declared = Number(response.headers.get("content-length") ?? "0");
+        if (declared > MAX_BYTES) {
+          failures.push({
+            url,
+            reason: `image is larger than ${MAX_BYTES / (1024 * 1024)}MB`,
+          });
+          continue;
+        }
+        const bytes = new Uint8Array(await response.arrayBuffer());
+        if (bytes.byteLength === 0) {
+          failures.push({ url, reason: "image was empty" });
+          continue;
+        }
+        if (bytes.byteLength > MAX_BYTES) {
+          failures.push({
+            url,
+            reason: `image is larger than ${MAX_BYTES / (1024 * 1024)}MB`,
+          });
+          continue;
+        }
+
+        const path = storagePathForImage(tenantId, url);
+        const { error: uploadError } = await supabase.storage.from(BUCKET).upload(path, bytes, {
+          contentType,
+          upsert: true,
         });
-        continue;
-      }
-      if (!response.ok) {
-        failures.push({ url, reason: `image host returned ${response.status}` });
-        continue;
-      }
+        if (uploadError) {
+          failures.push({
+            url,
+            reason: `could not store the image: ${uploadError.message}`,
+          });
+          continue;
+        }
 
-      const contentType = response.headers.get("content-type") ?? "";
-      if (!contentType.startsWith("image/")) {
-        // A login page served with 200 is the classic case: fetching "succeeds" and returns HTML,
-        // which would otherwise be stored as if it were a product photo.
-        failures.push({ url, reason: `not an image (server sent ${contentType || "no content type"})` });
-        continue;
+        const { data } = supabase.storage.from(BUCKET).getPublicUrl(path);
+        if (!data?.publicUrl) {
+          failures.push({
+            url,
+            reason: "stored the image but could not resolve its public URL",
+          });
+          continue;
+        }
+        rehosted.set(url, data.publicUrl);
+      } finally {
+        clearTimeout(timeout);
       }
-
-      const bytes = new Uint8Array(await response.arrayBuffer());
-      if (bytes.byteLength === 0) {
-        failures.push({ url, reason: "image was empty" });
-        continue;
-      }
-      if (bytes.byteLength > MAX_BYTES) {
-        failures.push({ url, reason: `image is larger than ${MAX_BYTES / (1024 * 1024)}MB` });
-        continue;
-      }
-
-      const path = storagePathForImage(tenantId, url);
-      const { error: uploadError } = await supabase.storage.from(BUCKET).upload(path, bytes, {
-        contentType,
-        upsert: true,
-      });
-      if (uploadError) {
-        failures.push({ url, reason: `could not store the image: ${uploadError.message}` });
-        continue;
-      }
-
-      const { data } = supabase.storage.from(BUCKET).getPublicUrl(path);
-      if (!data?.publicUrl) {
-        failures.push({ url, reason: "stored the image but could not resolve its public URL" });
-        continue;
-      }
-      rehosted.set(url, data.publicUrl);
     } catch (error) {
       const reason = error instanceof Error && error.name === "AbortError" ? "image host timed out" : "could not reach the image host";
       failures.push({ url, reason });

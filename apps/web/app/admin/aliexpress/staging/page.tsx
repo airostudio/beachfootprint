@@ -66,14 +66,18 @@ export default function AliExpressStagingPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [outcomes, setOutcomes] = useState<ConfirmOutcome[] | null>(null);
+  const [storeCurrency, setStoreCurrency] = useState("USD");
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [stagedRes, categoriesRes] = await Promise.all([
+      const [stagedRes, categoriesRes, currencyRes] = await Promise.all([
         fetch("/api/admin/products/aliexpress/staged"),
         fetch("/api/admin/categories"),
+        fetch("/api/admin/store-currency"),
       ]);
+      const currencyData = await currencyRes.json().catch(() => ({}));
+      if (typeof currencyData.storeCurrency === "string") setStoreCurrency(currencyData.storeCurrency);
       const stagedData = await stagedRes.json();
       if (!stagedRes.ok) throw new Error(stagedData.error ?? "Could not load the staging queue");
       const categoriesData = await categoriesRes.json().catch(() => ({ categories: [] }));
@@ -154,11 +158,34 @@ export default function AliExpressStagingPage() {
 
   async function setCategory(id: string, categoryId: string | null) {
     setStaged((prev) => prev.map((s) => (s.id === id ? { ...s, categoryId } : s)));
-    await fetch(`/api/admin/products/aliexpress/staged/${id}`, {
+    const res = await fetch(`/api/admin/products/aliexpress/staged/${id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ categoryId }),
     });
+    if (!res.ok) {
+      setError("Could not save the category — reload and try again.");
+      await load();
+    }
+  }
+
+  /** Relabels a staged product's prices as the store currency. A label change only — amounts aren't converted. */
+  async function relabelCurrency(id: string) {
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/admin/products/aliexpress/staged/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ currencyCode: storeCurrency }),
+      });
+      if (!res.ok) throw new Error("Could not update the currency");
+      setStaged((prev) => prev.map((s) => (s.id === id ? { ...s, currencyCode: storeCurrency } : s)));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not update the currency");
+    } finally {
+      setBusy(false);
+    }
   }
 
   return (
@@ -296,6 +323,19 @@ export default function AliExpressStagingPage() {
                         {priceRange(item.skus, item.currencyCode)} · {item.skus.length} variant
                         {item.skus.length === 1 ? "" : "s"}
                       </p>
+                      {item.currencyCode.toUpperCase() !== storeCurrency.toUpperCase() && (
+                        // The engine has labelled some imports CNY while pricing them on the same
+                        // scale as the store's USD products. It can't be confirmed in a second
+                        // currency (checkout refuses mixed carts), so the admin decides here.
+                        <div className="mt-2 border border-amber-300 bg-amber-50 px-2 py-1.5 text-[11px] text-amber-800">
+                          Priced in {item.currencyCode}; the store sells in {storeCurrency}. If these amounts are already {storeCurrency}{" "}
+                          prices,{" "}
+                          <button className="underline font-medium" disabled={busy} onClick={() => relabelCurrency(item.id)}>
+                            label them {storeCurrency}
+                          </button>
+                          . Otherwise adjust the prices in the editor first.
+                        </div>
+                      )}
                       <div className="mt-2 flex-1">
                         <select
                           className="w-full border border-stone-300 text-xs px-2 py-1"

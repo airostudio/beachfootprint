@@ -43,6 +43,13 @@ export async function POST(request: Request, { params }: { params: { id: string 
     if (!body.productId) return NextResponse.json({ error: "productId is required" }, { status: 400 });
 
     const supabase = createServiceRoleSupabaseClient();
+    const tenantId = await resolveTenantId(supabase);
+    // Both sides must be this store's: the ids come straight from the request.
+    const [{ data: category }, { data: product }] = await Promise.all([
+      supabase.from("categories").select("id").eq("id", params.id).eq("tenant_id", tenantId).maybeSingle(),
+      supabase.from("products").select("id").eq("id", body.productId).eq("tenant_id", tenantId).maybeSingle(),
+    ]);
+    if (!category || !product) return NextResponse.json({ error: "Category or product not found" }, { status: 404 });
     // Checked rather than discarded: reporting a write as done when it failed is how a product
     // ends up looking filed under a category it was never actually linked to.
     const { error } =
