@@ -11,10 +11,16 @@ import { timingSafeStringEqual } from "@/lib/timingSafeEqual";
  */
 export async function middleware(request: NextRequest) {
   const password = process.env.ADMIN_PASSWORD;
-  // If unset, fail open with a loud console warning rather than locking
-  // admins out entirely — but this should always be set in production.
+  // Unset in a deployed environment fails CLOSED: this gate guards customer details, order
+  // deletion and the catalogue, so a missing env var must lock the admin area, not open it to the
+  // internet. Local development (no VERCEL_ENV, not a production build) still runs without one.
   if (!password) {
-    console.warn("ADMIN_PASSWORD is not set — /admin is NOT password protected.");
+    const deployed = Boolean(process.env.VERCEL_ENV) || process.env.NODE_ENV === "production";
+    if (deployed) {
+      console.error("ADMIN_PASSWORD is not set — refusing all /admin requests.");
+      return new NextResponse("Admin is locked: ADMIN_PASSWORD is not configured for this deployment.", { status: 503 });
+    }
+    console.warn("ADMIN_PASSWORD is not set — /admin is NOT password protected (local development only).");
     return NextResponse.next();
   }
 

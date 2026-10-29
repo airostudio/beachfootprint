@@ -35,7 +35,7 @@ export default function DeleteOrderButton({
   function confirmDelete(event: React.FormEvent<HTMLFormElement>) {
     const message = isPaid
       ? `Delete order ${reference}?\n\nThis order is ${status}. Deleting it removes its items, payment record and fulfillment history from this store permanently. It does NOT refund the customer — do that in Stripe.`
-      : `Delete order ${reference}?\n\nThis removes it and its items permanently. It never completed payment, so no money is involved.`;
+      : `Delete order ${reference}?\n\nThis removes it and its items permanently. It never completed payment, so no money is involved — its Stripe checkout page is closed first so it can no longer be paid.`;
     if (!window.confirm(message)) event.preventDefault();
   }
 

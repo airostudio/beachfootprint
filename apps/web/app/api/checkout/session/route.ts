@@ -12,7 +12,7 @@ export const maxDuration = 30;
 const bodySchema = z.object({
   lines: z.array(z.object({ variantId: z.string().uuid(), quantity: z.number().int().min(1).max(99) })).min(1).max(50),
   email: z.string().email(),
-  phone: z.string().optional(),
+  phone: z.string().trim().min(6), // AliExpress rejects a shipping address with no phone
   fullName: z.string().min(2),
   line1: z.string().min(3),
   line2: z.string().optional(),
@@ -175,20 +175,32 @@ export async function POST(request: Request) {
       payment_intent_data: { metadata: { orderId, tenantId } },
       success_url: `${base}/checkout/success?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${base}/checkout?canceled=1`,
-      // Stripe collects and validates the shipping address itself where it can, but we keep ours
-      // as the record of what the customer actually entered.
-      shipping_address_collection: { allowed_countries: [input.country.toUpperCase() as "AU"] },
+      // No `shipping_address_collection`: the customer already entered their address on our form,
+      // and that is the one the order ships to. Asking again on Stripe's page made them type it
+      // twice — and a correction made there was silently ignored.
+      //
+      // Closed after an hour rather than Stripe's 24h default, so an abandoned or superseded
+      // session can't still be paid long after the customer started a fresh checkout (which
+      // would leave two charged orders). Expiry fires checkout.session.expired, which cancels
+      // the order.
+      expires_at: Math.floor(Date.now() / 1000) + 60 * 60,
     });
 
     if (!session.url) throw new Error("Stripe did not return a checkout URL.");
 
-    await supabase.from("payments").insert({
+    const { error: paymentError } = await supabase.from("payments").insert({
       order_id: orderId,
       provider: "stripe",
       provider_ref: session.id,
       status: "PROCESSING",
       amount: cart.totalCents,
     });
+    if (paymentError) {
+      // Without this row the webhook has nothing to mark paid and a refund can't find the order —
+      // so don't send the customer to pay into a session we can't reconcile.
+      await client.checkout.sessions.expire(session.id).catch(() => undefined);
+      throw new Error(`Could not record the payment: ${paymentError.message}`);
+    }
 
     return NextResponse.json({ url: session.url, orderId });
   } catch (error) {
