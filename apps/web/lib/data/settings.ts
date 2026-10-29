@@ -36,3 +36,27 @@ export async function getStoreSettings(): Promise<StoreContactSettings> {
     contactAddress: (data?.contact_address as string | undefined) ?? null,
   };
 }
+
+/**
+ * The free-shipping threshold as checkout actually applies it, formatted for display — or null if
+ * shipping is never free. The footer used to hardcode "Free shipping over $75" while checkout's
+ * real (configurable) threshold defaulted to $100. Never throws: the root layout renders this.
+ */
+export async function getFreeShippingNote(): Promise<string | null> {
+  try {
+    const tenantId = await getTenantId();
+    const { data } = await db()
+      .from("tenant_settings")
+      .select("free_shipping_threshold_cents, shipping_flat_rate_cents, base_currency")
+      .eq("tenant_id", tenantId)
+      .maybeSingle();
+    const flat = (data?.shipping_flat_rate_cents as number | null | undefined) ?? null;
+    if (flat === 0) return "Free shipping on every order.";
+    const threshold = (data?.free_shipping_threshold_cents as number | null | undefined) ?? 10000; // mirrors pricing.ts default
+    if (!threshold || threshold <= 0) return "Free shipping on every order.";
+    const currency = ((data?.base_currency as string | undefined) ?? "USD").toUpperCase();
+    return `Free shipping over ${new Intl.NumberFormat("en-US", { style: "currency", currency, maximumFractionDigits: 0 }).format(threshold / 100)}.`;
+  } catch {
+    return null;
+  }
+}

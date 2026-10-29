@@ -1,13 +1,9 @@
 import Link from "next/link";
 
+// Only screens that work without customer sign-in (which isn't built yet) are linked.
 const links = [
   { href: "/account", label: "Overview" },
-  { href: "/account/orders", label: "Orders" },
-  { href: "/account/products", label: "My Products" },
-  { href: "/account/wishlist", label: "Wishlists" },
-  { href: "/account/addresses", label: "Addresses" },
-  { href: "/account/profile", label: "Profile" },
-  { href: "/account/privacy", label: "Privacy" },
+  { href: "/account/orders", label: "Track an order" },
   { href: "/account/support", label: "Support" },
 ];
 

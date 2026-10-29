@@ -182,7 +182,7 @@ function CheckoutFlow() {
                 {errors[f.name] && <p className="text-xs text-red-600 mt-1">{errors[f.name]?.message}</p>}
               </div>
             ))}
-            <p className="text-xs text-stone-500">Estimated delivery: 5–12 business days via Standard Shipping.</p>
+            <p className="text-xs text-stone-500">Typical delivery: 10–25 business days after despatch, with tracking emailed once it ships.</p>
           </div>
         )}
 

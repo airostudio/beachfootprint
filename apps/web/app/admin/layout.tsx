@@ -6,6 +6,7 @@ const sections = [
   { href: "/admin/categories", label: "Categories" },
   { href: "/admin/orders", label: "Orders" },
   { href: "/admin/reviews", label: "Reviews" },
+  { href: "/admin/support", label: "Support" },
   { href: "/admin/cms", label: "CMS & Banners" },
   { href: "/admin/payments", label: "Payments" },
   { href: "/admin/aliexpress", label: "AliExpress" },
@@ -17,9 +18,9 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   return (
     <div className="min-h-screen bg-warm-100">
       <div className="bg-ink-950 text-warm-50">
-        <div className="container-page h-14 flex items-center gap-8 text-sm">
+        <div className="container-page h-14 flex items-center gap-8 text-sm min-w-0">
           <span className="font-serif text-lg">Beach Footprints Admin</span>
-          <nav className="flex gap-6">
+          <nav className="flex gap-6 overflow-x-auto whitespace-nowrap">
             {sections.map((s) => (
               <Link key={s.href} href={s.href} className="text-stone-300 hover:text-warm-50">
                 {s.label}

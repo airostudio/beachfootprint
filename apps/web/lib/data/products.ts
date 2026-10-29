@@ -390,14 +390,17 @@ export async function getProductsWithoutMainCategory(): Promise<ProductNeedingCa
 const GENERIC_WHATS_INCLUDED = ["Product", "Care instructions"];
 const GENERIC_CARE_SUMMARY =
   "Hand wash or use a gentle cycle in cool water with a mild, fragrance-free detergent. Air dry out of direct sunlight before storage.";
+// Kept consistent with the store's own policy pages (lib/legal/policies.ts). The previous copy
+// described a workshop, hand-packing and a returns "window shown at checkout" that doesn't exist —
+// claims a store shipping from suppliers can't stand behind.
 const GENERIC_FAQS = [
   {
-    q: "How is my order packaged?",
-    a: "Every order ships in simple, unmarked packaging designed to keep your pieces in the same condition they left our workshop.",
+    q: "How long does delivery take?",
+    a: "Orders go to our supplier within 1–2 business days of payment, then typically arrive 10–25 business days after despatch. You'll get a tracking number by email once it ships.",
   },
   {
     q: "What is your return policy?",
-    a: "Unworn, unwashed items in original packaging are eligible for return within the window shown at checkout — see our Returns guide for details.",
+    a: "Most unworn, unwashed items in original condition can be returned within 30 days of delivery — see Returns & Refunds for the details.",
   },
 ];
 
@@ -406,8 +409,10 @@ function deliverySummary(row: ProductRow): string {
     const days = row.production_days ?? 5;
     return `Made to order. Production time ${Math.max(1, days - 2)}–${days + 2} days, then standard delivery.`;
   }
-  const dispatch = row.dispatch_days ?? 2;
-  return `Ships within ${dispatch} business day${dispatch === 1 ? "" : "s"}.`;
+  // A product-specific dispatch time wins; otherwise the policy's supplier timeline, not a
+  // "ships in 2 days" promise a dropshipped item can't meet.
+  if (row.dispatch_days) return `Dispatched within ${row.dispatch_days} business day${row.dispatch_days === 1 ? "" : "s"}, then typically 10–25 business days in transit.`;
+  return "Sent to our supplier within 1–2 business days; typical delivery 10–25 business days after despatch.";
 }
 
 function warrantySummary(row: ProductRow): string {

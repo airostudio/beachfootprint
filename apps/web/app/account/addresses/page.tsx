@@ -1,11 +1,7 @@
-export default function AddressesPage() {
-  return (
-    <div>
-      <div className="flex justify-between items-center mb-6">
-        <p className="text-sm text-stone-500">Saved addresses</p>
-        <button className="btn-secondary">Add Address</button>
-      </div>
-      <div className="border border-stone-200 p-6 text-sm text-stone-500">No saved addresses yet.</div>
-    </div>
-  );
+import { redirect } from "next/navigation";
+
+// Needs customer sign-in, which isn't built yet. The page that used to be here rendered controls
+// that saved nothing, so it now goes back to the account overview, which offers what does work.
+export default function Page() {
+  redirect("/account");
 }

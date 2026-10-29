@@ -40,6 +40,16 @@ function renderBody(email: TransactionalEmail): { subject: string; html: string 
         html: `<p>Your order <strong>${esc(data.orderReference ?? data.orderId)}</strong> has shipped via ${esc(data.carrier)}.</p><p>Tracking: ${tracking}</p>`,
       };
     }
+    case "support-ticket": {
+      return {
+        subject: email.subject ?? "New support message",
+        html:
+          `<p><strong>From:</strong> ${esc(data.name ? `${data.name} <${data.from}>` : data.from)}</p>` +
+          `<p><strong>Category:</strong> ${esc(data.category)}${data.reference ? ` · <strong>Order:</strong> ${esc(data.reference)}` : ""}</p>` +
+          `<p style="white-space:pre-wrap">${esc(data.message)}</p>` +
+          `<p>Reply directly to ${esc(data.from)}. The message is also in Admin → Support.</p>`,
+      };
+    }
     default:
       return { subject: email.subject ?? email.templateKey, html: `<pre>${esc(JSON.stringify(data, null, 2))}</pre>` };
   }
