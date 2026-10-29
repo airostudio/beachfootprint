@@ -195,7 +195,7 @@ export default function PaymentsSettingsPage() {
             label="From address"
             ok={status.email.fromSet}
             envVar="EMAIL_FROM"
-            detail='e.g. "Beach Footprints <orders@beachfootprint.com.au>" — the domain must be verified in Resend.'
+            detail='e.g. "Mira & Muse <orders@shopmiramuse.com>" — the domain must be verified in Resend.'
           />
         </section>
       )}

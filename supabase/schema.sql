@@ -1,5 +1,5 @@
 -- ============================================================
--- Beach Footprints — Supabase Schema
+-- Mira & Muse — Supabase Schema
 -- Run in the Supabase SQL Editor (Dashboard → SQL Editor), or:
 --   supabase db execute -f supabase/schema.sql
 --

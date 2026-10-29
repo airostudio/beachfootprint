@@ -1,5 +1,5 @@
 -- ============================================================
--- Beach Footprints — Storage buckets
+-- Mira & Muse — Storage buckets
 -- Run after supabase/schema.sql, e.g.:
 --   supabase db execute -f supabase/storage.sql
 -- ============================================================

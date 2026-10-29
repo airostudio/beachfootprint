@@ -239,7 +239,7 @@ function CheckoutFlow() {
             )}
 
             <p className="text-xs text-stone-500 mt-4">
-              You&rsquo;ll be taken to Stripe&rsquo;s secure payment page to enter your card details. Beach Footprints
+              You&rsquo;ll be taken to Stripe&rsquo;s secure payment page to enter your card details. Mira &amp; Muse
               never sees or stores your card number.
             </p>
           </div>

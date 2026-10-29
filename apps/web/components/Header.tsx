@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { Logo } from "@/components/Logo";
 import { useState } from "react";
 
 export interface NavCategory {
@@ -38,8 +39,8 @@ export default function Header({ categories }: { categories: NavCategory[] }) {
           Menu
         </button>
 
-        <Link href="/" className="relative z-10 shrink-0 flex items-center" aria-label="Beach Footprints home">
-          <span className="font-serif text-2xl tracking-wide text-ink-950">Beach Footprints</span>
+        <Link href="/" className="relative z-10 shrink-0 flex items-center text-ink-950" aria-label="Mira & Muse home">
+          <Logo markClassName="h-8 w-8 sm:h-9 sm:w-9" wordClassName="text-xl sm:text-2xl" />
         </Link>
 
         <nav className="hidden lg:flex items-center gap-7">
