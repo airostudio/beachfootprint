@@ -51,6 +51,8 @@ export interface ProductVariantSummary {
   /** e.g. [["Color", "Blue"], ["Size", "M"]] — only the options this variant actually defines. */
   options: Array<{ name: string; value: string }>;
   inStock: boolean;
+  /** Supplier photo for this variant's colour/style, when there is one (https only). */
+  imageUrl?: string;
 }
 
 export interface ProductDetail extends ProductSummary {
