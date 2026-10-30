@@ -6,11 +6,13 @@ import { linkToNewArrivals } from "@/lib/import/newArrivalsLink";
 import { db, getTenantId } from "@/lib/data/client";
 import { DEMO_PRODUCT_HANDLES } from "@/lib/data/demoProducts";
 import { NEW_ARRIVALS_HANDLE, newArrivalsCutoffIso } from "@/lib/newArrivals";
+import { kickSocialDispatch } from "@/lib/social/dispatch";
 
 export async function publishProduct(productId: string): Promise<void> {
   const tenantId = await getTenantId();
   const { error } = await db().from("products").update({ status: "PUBLISHED" }).eq("id", productId).eq("tenant_id", tenantId);
   if (error) throw new Error(`Could not publish product: ${error.message}`);
+  kickSocialDispatch();
   revalidatePath("/admin/products");
   revalidatePath("/admin");
   revalidatePath("/shop");
@@ -122,6 +124,7 @@ export async function publishAllDrafts(): Promise<void> {
   const tenantId = await getTenantId();
   const { error } = await db().from("products").update({ status: "PUBLISHED" }).eq("tenant_id", tenantId).eq("status", "DRAFT");
   if (error) throw new Error(`Could not publish draft products: ${error.message}`);
+  kickSocialDispatch();
   revalidatePath("/admin/products");
   revalidatePath("/admin");
   revalidatePath("/shop");
@@ -240,6 +243,7 @@ export async function setProductsStatus(ids: string[], status: "PUBLISHED" | "DR
   const tenantId = await getTenantId();
   const { error } = await db().from("products").update({ status }).eq("tenant_id", tenantId).in("id", ids);
   if (error) return { ok: false, message: `Could not update: ${error.message}` };
+  if (status === "PUBLISHED") kickSocialDispatch();
 
   revalidateProductViews();
   const label = status === "PUBLISHED" ? "published" : status === "DRAFT" ? "moved to Draft" : "archived";

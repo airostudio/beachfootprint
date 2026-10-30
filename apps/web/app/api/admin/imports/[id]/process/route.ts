@@ -4,6 +4,7 @@ import { completeUtf8Length } from "@/lib/import/utf8";
 import { parseCsvChunk, zipCsvRow } from "@trend/core";
 import { upsertProductRows, markMissingProductsOutOfStock, type ProductCsvRecord, type ImportRowError } from "@/lib/import/product-import";
 import { applyColumnMapping } from "@/lib/import/columnMapping";
+import { kickSocialDispatch } from "@/lib/social/dispatch";
 
 export const runtime = "nodejs";
 // Never prerender or cache an admin endpoint: Next will happily statically optimise a
@@ -202,5 +203,6 @@ export async function POST(request: Request, { params }: { params: { id: string 
   // rather than reporting progress that wasn't recorded.
   if (saveError) return NextResponse.json({ error: `Chunk imported but progress could not be saved: ${saveError.message}` }, { status: 500 });
 
+  if (reachedEnd) kickSocialDispatch();
   return NextResponse.json({ done: reachedEnd, progress, processedThisChunk: chunkOutcome.processed, result: nextResult });
 }
