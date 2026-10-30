@@ -52,6 +52,17 @@ export default function AddToCartActions({
     setCssColours(found);
   }, [names, variants]);
 
+  // The colour picked by default shows its own photo from the start. Otherwise the page opens on the
+  // product's hero photo, which is often a different colour from the one pre-selected — then picking
+  // the hero's colour looks like it does nothing.
+  const setSelectedImage = picked?.setSelectedImage;
+  useEffect(() => {
+    if (!imageOption || !setSelectedImage) return;
+    const value = initialSelection(variants)[imageOption];
+    const image = value ? imageForValue(variants, imageOption, value) : undefined;
+    if (image) setSelectedImage(image);
+  }, [imageOption, variants, setSelectedImage]);
+
   const usesOptions = names.length > 0;
   const selected = usesOptions ? findVariant(variants, selection) : variants.find((v) => v.id === selectedId);
   const canBuy = Boolean(selected?.inStock);
