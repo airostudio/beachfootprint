@@ -140,6 +140,9 @@ export async function commitAliExpressImport(
           option2_value: sku.options?.[1]?.value ?? null,
           option3_name: sku.options?.[2]?.name ?? null,
           option3_value: sku.options?.[2]?.value ?? null,
+          // The supplier's photo for this SKU's colour, so the storefront can show a colour code
+          // like "GN1" as the actual colour and switch the main image when it's picked.
+          image_url: sku.options?.find((o) => o.imageUrl && isDisplayableImageUrl(o.imageUrl))?.imageUrl ?? null,
           weight_grams: staged.packageWeightGrams,
           price: sku.retailPriceCents,
           compare_at: sku.compareAtCents,

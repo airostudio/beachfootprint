@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import ProductGallery from "@/components/ProductGallery";
+import { ProductImageProvider } from "@/components/ProductImageContext";
 import ProductTabs from "@/components/ProductTabs";
 import AddToCartActions from "@/components/AddToCartActions";
 import ProductCard from "@/components/ProductCard";
@@ -66,6 +67,8 @@ export default async function ProductPage({ params }: Props) {
         <span className="text-ink-900">{product.title}</span>
       </nav>
 
+      {/* Shared so picking a colour in the purchase panel changes the gallery's main image. */}
+      <ProductImageProvider>
       <div className="grid lg:grid-cols-2 gap-12">
         <ProductGallery images={product.gallery} />
 
@@ -91,6 +94,7 @@ export default async function ProductPage({ params }: Props) {
           <ProductTabs product={product} />
         </div>
       </div>
+      </ProductImageProvider>
 
       <ProductReviews productId={product.id} reviews={reviews} />
 

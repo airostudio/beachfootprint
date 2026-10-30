@@ -56,7 +56,7 @@ export async function resolveCart(
   const [{ data, error }, { data: settingsRow }] = await Promise.all([
     supabase
       .from("product_variants")
-      .select("id, product_id, title, sku, price, currency, is_active, products!inner(id, tenant_id, title, handle, status)")
+      .select("id, product_id, title, sku, price, currency, is_active, image_url, products!inner(id, tenant_id, title, handle, status)")
       .in(
         "id",
         wanted.map((l) => l.variantId),
@@ -81,6 +81,7 @@ export async function resolveCart(
     price: number;
     currency: string;
     is_active: boolean;
+    image_url?: string | null;
     products: { id: string; tenant_id: string; title: string; handle: string; status: string } | null;
   }
   const rows = (data ?? []) as unknown as VariantRow[];
@@ -129,7 +130,8 @@ export async function resolveCart(
       title: row.products.title,
       variantTitle: row.title,
       sku: row.sku,
-      imageUrl: imageByProduct.get(row.product_id) ?? null,
+      // The picked colour's own photo when there is one, so the cart shows what was chosen.
+      imageUrl: (row.image_url?.startsWith("https://") ? row.image_url : null) ?? imageByProduct.get(row.product_id) ?? null,
       unitPriceCents: row.price,
       quantity: want.quantity,
       lineTotalCents: row.price * want.quantity,

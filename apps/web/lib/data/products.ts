@@ -442,7 +442,7 @@ export async function getProductBySlug(slug: string): Promise<ProductDetail | un
     supabase.from("compatibility_links").select("to_product_id, relation_type").eq("from_product_id", row.id),
     supabase
       .from("product_variants")
-      .select("id, title, sku, price, compare_at, currency, is_active, option1_name, option1_value, option2_name, option2_value, option3_name, option3_value")
+      .select("id, title, sku, price, compare_at, currency, is_active, image_url, option1_name, option1_value, option2_name, option2_value, option3_name, option3_value")
       .eq("product_id", row.id)
       .order("price"),
   ]);
@@ -455,6 +455,7 @@ export async function getProductBySlug(slug: string): Promise<ProductDetail | un
     compare_at: number | null;
     currency: string;
     is_active: boolean;
+    image_url: string | null;
     option1_name: string | null;
     option1_value: string | null;
     option2_name: string | null;
@@ -486,6 +487,7 @@ export async function getProductBySlug(slug: string): Promise<ProductDetail | un
       .filter(([, value]) => Boolean(value))
       .map(([name, value]) => ({ name: name ?? "Option", value: value as string })),
     inStock: v.is_active && (stockByVariant.get(v.id) ?? 0) > 0,
+    imageUrl: v.image_url && isDisplayableImageUrl(v.image_url) ? v.image_url : undefined,
   }));
 
   const summary = toSummary(row, hydrated);
