@@ -105,6 +105,15 @@ function CheckoutFlow() {
         body: JSON.stringify({ ...values, country: values.country.toUpperCase(), lines }),
       });
       const data = await res.json();
+      if (res.status === 409 && Array.isArray(data.unavailable)) {
+        // Something sold out (often at the supplier, at the last moment): say exactly what, and
+        // re-price so the order summary shows it and the customer can remove it from the cart.
+        const items = (data.unavailable as { title: string; variantTitle?: string | null; reason?: string | null }[])
+          .map((u) => `${u.title}${u.variantTitle ? ` (${u.variantTitle})` : ""}${u.reason ? ` — ${u.reason.toLowerCase()}` : ""}`)
+          .join("; ");
+        price();
+        throw new Error(`${data.error} ${items}. Please update your cart to continue.`);
+      }
       if (!res.ok || !data.url) throw new Error(data.error ?? "Could not start payment");
       window.location.href = data.url;
     } catch (err) {

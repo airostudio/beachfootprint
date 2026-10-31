@@ -76,7 +76,22 @@ function variant(overrides: Partial<VariantFixture> = {}): VariantFixture {
 describe("resolveCart", () => {
   it("returns an empty cart for no requested lines", async () => {
     const cart = await resolveCart(fakeSupabase({ variants: [], stock: {} }), TENANT_ID, []);
-    expect(cart).toEqual({ lines: [], currency: "USD", subtotalCents: 0, shippingCents: 0, taxCents: 0, totalCents: 0 });
+    expect(cart).toEqual({ lines: [], currency: "USD", subtotalCents: 0, shippingCents: 0, taxCents: 0, totalCents: 0, stockBuffer: 0 });
+  });
+
+  it("holds back a safety buffer on AliExpress stock, but not on the store's own", async () => {
+    const supabase = fakeSupabase({
+      variants: [variant({ id: "variant-1", supplier: "dropship-engine" } as never), variant({ id: "variant-2" })],
+      stock: { "variant-1": 2, "variant-2": 2 },
+    });
+    const cart = await resolveCart(supabase, TENANT_ID, [
+      { variantId: "variant-1", quantity: 1 },
+      { variantId: "variant-2", quantity: 1 },
+    ]);
+    const [supplier, own] = cart.lines;
+    expect(supplier.purchasable).toBe(false);
+    expect(supplier.unavailableReason).toBe("Out of stock");
+    expect(own.purchasable).toBe(true);
   });
 
   it("prices a purchasable line from the database, not the request", async () => {

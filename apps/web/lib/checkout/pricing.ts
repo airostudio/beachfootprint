@@ -1,5 +1,6 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { bufferOrDefault, sellableStock } from "../stock";
 
 export interface ResolvedLine {
   variantId: string;
@@ -13,7 +14,12 @@ export interface ResolvedLine {
   quantity: number;
   lineTotalCents: number;
   currency: string;
+  /** What the customer can buy: on-hand stock, less the safety buffer for supplier stock. */
   stockOnHand: number;
+  /** Set for AliExpress variants, so checkout can ask the supplier for live stock. */
+  supplier: string | null;
+  supplierProductId: string | null;
+  supplierSkuId: string | null;
   /** False when the variant is inactive, unpublished, or short on stock — checkout refuses these. */
   purchasable: boolean;
   unavailableReason: string | null;
@@ -26,6 +32,8 @@ export interface ResolvedCart {
   shippingCents: number;
   taxCents: number;
   totalCents: number;
+  /** Units held back from supplier stock (lib/stock.ts), for checkout's live supplier check. */
+  stockBuffer: number;
 }
 
 /** Fallbacks if a tenant has no tenant_settings row yet — match this table's own column defaults. */
@@ -50,20 +58,22 @@ export async function resolveCart(
     .map((l) => ({ variantId: l.variantId, quantity: Math.min(99, Math.floor(l.quantity)) }));
 
   if (wanted.length === 0) {
-    return { lines: [], currency: "USD", subtotalCents: 0, shippingCents: 0, taxCents: 0, totalCents: 0 };
+    return { lines: [], currency: "USD", subtotalCents: 0, shippingCents: 0, taxCents: 0, totalCents: 0, stockBuffer: 0 };
   }
 
   const [{ data, error }, { data: settingsRow }] = await Promise.all([
     supabase
       .from("product_variants")
-      .select("id, product_id, title, sku, price, currency, is_active, image_url, products!inner(id, tenant_id, title, handle, status)")
+      .select(
+        "id, product_id, title, sku, price, currency, is_active, image_url, supplier, supplier_product_id, supplier_sku_id, products!inner(id, tenant_id, title, handle, status)",
+      )
       .in(
         "id",
         wanted.map((l) => l.variantId),
       ),
     supabase
       .from("tenant_settings")
-      .select("shipping_flat_rate_cents, free_shipping_threshold_cents, tax_rate_percent")
+      .select("shipping_flat_rate_cents, free_shipping_threshold_cents, tax_rate_percent, supplier_stock_buffer")
       .eq("tenant_id", tenantId)
       .maybeSingle(),
   ]);
@@ -72,6 +82,7 @@ export async function resolveCart(
   const shippingFlatCents = settingsRow?.shipping_flat_rate_cents ?? DEFAULT_SHIPPING_FLAT_CENTS;
   const freeShippingThresholdCents = settingsRow?.free_shipping_threshold_cents ?? DEFAULT_FREE_SHIPPING_THRESHOLD_CENTS;
   const taxRatePercent = settingsRow?.tax_rate_percent ?? DEFAULT_TAX_RATE_PERCENT;
+  const stockBuffer = bufferOrDefault(settingsRow?.supplier_stock_buffer);
 
   interface VariantRow {
     id: string;
@@ -82,6 +93,9 @@ export async function resolveCart(
     currency: string;
     is_active: boolean;
     image_url?: string | null;
+    supplier?: string | null;
+    supplier_product_id?: string | null;
+    supplier_sku_id?: string | null;
     products: { id: string; tenant_id: string; title: string; handle: string; status: string } | null;
   }
   const rows = (data ?? []) as unknown as VariantRow[];
@@ -119,7 +133,7 @@ export async function resolveCart(
       continue;
     }
 
-    const stockOnHand = stockByVariant.get(row.id) ?? 0;
+    const stockOnHand = sellableStock(stockByVariant.get(row.id) ?? 0, row.supplier, stockBuffer);
     const published = row.products.status === "PUBLISHED";
     const purchasable = published && row.is_active && stockOnHand >= want.quantity;
 
@@ -137,6 +151,9 @@ export async function resolveCart(
       lineTotalCents: row.price * want.quantity,
       currency: row.currency,
       stockOnHand,
+      supplier: row.supplier ?? null,
+      supplierProductId: row.supplier_product_id ?? null,
+      supplierSkuId: row.supplier_sku_id ?? null,
       purchasable,
       unavailableReason: !published
         ? "No longer available"
@@ -179,6 +196,9 @@ export async function resolveCart(
       lineTotalCents: 0,
       currency,
       stockOnHand: 0,
+      supplier: null,
+      supplierProductId: null,
+      supplierSkuId: null,
       purchasable: false,
       unavailableReason: "No longer available",
     });
@@ -198,5 +218,6 @@ export async function resolveCart(
     shippingCents,
     taxCents,
     totalCents: subtotalCents + shippingCents + taxCents,
+    stockBuffer,
   };
 }

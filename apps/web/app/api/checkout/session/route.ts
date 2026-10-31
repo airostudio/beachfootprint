@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { createServiceRoleSupabaseClient } from "@trend/db";
 import { resolveTenantId } from "@/lib/import/tenant";
-import { resolveCart } from "@/lib/checkout/pricing";
+import { checkLiveSupplierStock } from "@/lib/checkout/liveStock";
+import { resolveCart, type ResolvedLine } from "@/lib/checkout/pricing";
 import { siteUrl, stripe } from "@/lib/checkout/stripe";
 import { checkRateLimit, clientIp } from "@/lib/rateLimit";
 
@@ -33,6 +34,13 @@ const bodySchema = z.object({
  *   It stays PENDING_PAYMENT until Stripe's webhook confirms the money actually moved — this route
  *   never marks anything paid, because a customer reaching the success page proves nothing.
  */
+function unavailableResponse(lines: ResolvedLine[], error: string) {
+  return NextResponse.json(
+    { error, unavailable: lines.map((l) => ({ variantId: l.variantId, title: l.title, variantTitle: l.variantTitle, reason: l.unavailableReason })) },
+    { status: 409 },
+  );
+}
+
 export async function POST(request: Request) {
   // Each call writes a PENDING_PAYMENT order and a Stripe session before the customer has paid
   // anything, so hitting this repeatedly litters both with no charge ever resulting — limit by IP.
@@ -64,18 +72,16 @@ export async function POST(request: Request) {
     const cart = await resolveCart(supabase, tenantId, input.lines);
 
     const unavailable = cart.lines.filter((l) => !l.purchasable);
-    if (unavailable.length > 0) {
-      return NextResponse.json(
-        {
-          error: "Some items are no longer available.",
-          unavailable: unavailable.map((l) => ({ variantId: l.variantId, title: l.title, reason: l.unavailableReason })),
-        },
-        { status: 409 },
-      );
-    }
+    if (unavailable.length > 0) return unavailableResponse(unavailable, "Some items are no longer available.");
     if (cart.lines.length === 0 || cart.totalCents <= 0) {
       return NextResponse.json({ error: "Your cart is empty." }, { status: 400 });
     }
+
+    // Last word on availability before any money moves: AliExpress's live stock for the supplier
+    // items in the cart. Fails open — see checkLiveSupplierStock.
+    await checkLiveSupplierStock(supabase, cart.lines, cart.stockBuffer);
+    const soldOut = cart.lines.filter((l) => !l.purchasable);
+    if (soldOut.length > 0) return unavailableResponse(soldOut, "Sorry — our supplier has just sold out of something in your cart.");
 
     // Guests are customers too — keyed by email so repeat orders attach to one record.
     const { data: customer, error: customerError } = await supabase
