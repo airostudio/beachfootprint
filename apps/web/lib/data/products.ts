@@ -3,6 +3,7 @@ import { db, getTenantId } from "./client";
 import { NEW_ARRIVALS_HANDLE, newArrivalsCutoffIso } from "../newArrivals";
 import { isDisplayableImageUrl } from "../import/imageUrls";
 import { sellableStock } from "../stock";
+import { looksLikeJson, parseSizeChart, type SizeChart } from "../sizeChart";
 import { getSupplierStockBuffer } from "./settings";
 import type { ProductDetail, ProductSpecGroup, ProductSummary, ProductType, ProductVariantSummary } from "../types";
 
@@ -509,7 +510,14 @@ export async function getProductBySlug(slug: string): Promise<ProductDetail | un
 
   const specRows = (specsRes.data ?? []) as { group: string; label: string; value: string }[];
   const specGroups: ProductSpecGroup[] = [];
+  let sizeChart: SizeChart | undefined;
   for (const s of specRows) {
+    // A supplier size chart (raw JSON) becomes a proper table instead of a spec line, and any
+    // other raw JSON is dropped — neither is something to print to a customer as text.
+    if (looksLikeJson(s.value)) {
+      sizeChart ??= parseSizeChart(s.value) ?? undefined;
+      continue;
+    }
     let group = specGroups.find((g) => g.group === s.group);
     if (!group) {
       group = { group: s.group, items: [] };
@@ -556,7 +564,8 @@ export async function getProductBySlug(slug: string): Promise<ProductDetail | un
     variants,
     gallery: galleryRows.length > 0 ? galleryRows.map((g) => ({ url: g.url, alt: g.alt ?? summary.title })) : summary.imageUrl ? [{ url: summary.imageUrl, alt: summary.imageAlt }] : [],
     description: row.description ?? summary.shortDescription,
-    specGroups,
+    specGroups: specGroups.filter((g) => g.items.length > 0),
+    sizeChart,
     whatsIncluded: GENERIC_WHATS_INCLUDED,
     careSummary: row.care_instructions ?? GENERIC_CARE_SUMMARY,
     deliverySummary: deliverySummary(row),

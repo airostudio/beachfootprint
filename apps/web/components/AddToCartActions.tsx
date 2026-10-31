@@ -18,15 +18,19 @@ import {
   type Selection,
 } from "@/lib/variantOptions";
 import type { ProductVariantSummary } from "@/lib/types";
+import type { SizeChart } from "@/lib/sizeChart";
+import SizeGuideButton from "@/components/SizeGuideButton";
 
 export default function AddToCartActions({
   priceCents,
   currency,
   variants,
+  sizeChart,
 }: {
   priceCents: number;
   currency: string;
   variants: ProductVariantSummary[];
+  sizeChart?: SizeChart;
 }) {
   const { add } = useCart();
   const picked = useProductImage();
@@ -64,6 +68,8 @@ export default function AddToCartActions({
   }, [imageOption, variants, setSelectedImage]);
 
   const usesOptions = names.length > 0;
+  // The option the size chart belongs to — "Size", "Bottom Size", "US Size"…
+  const sizeOption = names.find((n) => /size/i.test(n));
   const selected = usesOptions ? findVariant(variants, selection) : variants.find((v) => v.id === selectedId);
   const canBuy = Boolean(selected?.inStock);
 
@@ -92,8 +98,11 @@ export default function AddToCartActions({
           const isImageOption = name === imageOption;
           return (
             <fieldset key={name}>
-              <legend className="text-xs text-stone-500 mb-2">
-                {name}: <span className="text-ink-950 font-medium">{selection[name] ?? "—"}</span>
+              <legend className="w-full text-xs text-stone-500 mb-2 flex items-baseline justify-between gap-4">
+                <span>
+                  {name}: <span className="text-ink-950 font-medium">{selection[name] ?? "—"}</span>
+                </span>
+                {sizeChart && name === sizeOption && <SizeGuideButton chart={sizeChart} selectedSize={selection[name]} />}
               </legend>
               <div className="flex flex-wrap gap-2">
                 {values.map((value) => {
@@ -171,6 +180,8 @@ export default function AddToCartActions({
           </select>
         </label>
       )}
+
+      {sizeChart && !(usesOptions && variants.length > 1 && sizeOption) && <SizeGuideButton chart={sizeChart} />}
 
       <div className="flex items-center gap-3">
         <label htmlFor="qty" className="text-sm text-stone-500">
