@@ -4,6 +4,7 @@ import { createServiceRoleSupabaseClient } from "@trend/db";
 import { resolveTenantId } from "@/lib/import/tenant";
 import { commitAliExpressImport } from "@/lib/import/commitAliExpressImport";
 import { getStagedProduct } from "@/lib/import/staging";
+import { kickSocialDispatch } from "@/lib/social/dispatch";
 
 export const runtime = "nodejs";
 // Never prerender or cache an admin endpoint: Next will happily statically optimise a
@@ -108,5 +109,6 @@ export async function POST(request: Request) {
     }
   }
 
+  kickSocialDispatch();
   return NextResponse.json({ results, confirmed: results.filter((r) => r.ok).length, failed: results.filter((r) => !r.ok).length });
 }

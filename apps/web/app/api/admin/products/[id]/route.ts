@@ -3,6 +3,7 @@ import { z } from "zod";
 import { createServiceRoleSupabaseClient } from "@trend/db";
 import { resolveTenantId } from "@/lib/import/tenant";
 import { isDisplayableImageUrl } from "@/lib/import/imageUrls";
+import { kickSocialDispatch } from "@/lib/social/dispatch";
 
 export const runtime = "nodejs";
 // Never prerender or cache an admin endpoint: Next will happily statically optimise a
@@ -211,6 +212,8 @@ export async function PATCH(request: Request, { params }: { params: { id: string
       if (clearError) throw new Error(`Could not update categories: ${clearError.message}`);
     }
 
+    // Going live for the first time queues the product for Facebook/Instagram (a database trigger); send it now.
+    if (parsed.data.status === "PUBLISHED") kickSocialDispatch();
     return NextResponse.json({ ok: true });
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "Could not save product" }, { status: 500 });
