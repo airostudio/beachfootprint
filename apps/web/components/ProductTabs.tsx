@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import type { ProductDetail } from "@/lib/types";
+import SizeChartTable from "@/components/SizeChartTable";
 
 export default function ProductTabs({ product }: { product: ProductDetail }) {
   const tabs = [
@@ -36,7 +37,9 @@ export default function ProductTabs({ product }: { product: ProductDetail }) {
         {active === "description" && <p>{product.description}</p>}
 
         {active === "specs" && (
-          <div className="space-y-6">
+          <div className="space-y-8">
+            {product.sizeChart && <SizeChartTable chart={product.sizeChart} />}
+            {product.specGroups.length === 0 && !product.sizeChart && <p className="text-stone-500">No specifications listed for this product.</p>}
             {product.specGroups.map((g) => (
               <div key={g.group}>
                 <p className="eyebrow mb-2">{g.group}</p>

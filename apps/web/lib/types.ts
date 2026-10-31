@@ -1,3 +1,5 @@
+import type { SizeChart } from "./sizeChart";
+
 export type ProductType =
   | "standard"
   | "accessory"
@@ -61,6 +63,8 @@ export interface ProductDetail extends ProductSummary {
   gallery: { url: string; alt: string }[];
   description: string;
   specGroups: ProductSpecGroup[];
+  /** The supplier's size chart, when there is one (lib/sizeChart.ts). */
+  sizeChart?: SizeChart;
   whatsIncluded: string[];
   careSummary: string;
   deliverySummary: string;
