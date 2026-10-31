@@ -9,14 +9,14 @@ import { getFreeShippingNote } from "@/lib/data/settings";
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
-  title: { default: "Mira & Muse — Boho Surf Lifestyle", template: "%s | Mira & Muse" },
-  description: "Boho surf-culture apparel and accessories — woven, hand-dyed and built for barefoot mornings.",
+  title: { default: "Mira & Muse — A little bohemian. Entirely you.", template: "%s | Mira & Muse" },
+  description: "A women's fashion boutique inspired by the coast: flowing dresses, relaxed silhouettes and beautiful textures. Find your muse. Wear your story.",
   robots: { index: true, follow: true },
   openGraph: {
     type: "website",
     siteName: "Mira & Muse",
-    title: "Mira & Muse — Boho Surf Lifestyle",
-    description: "Boho surf-culture apparel and accessories for warm sand and salt air.",
+    title: "Mira & Muse — A little bohemian. Entirely you.",
+    description: "A women's fashion boutique inspired by the coast. Find your muse. Wear your story.",
   },
 };
 

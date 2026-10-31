@@ -16,7 +16,8 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     "/compare",
     "/product-finder",
     "/care",
-    "/guides",
+    "/journal",
+    "/about",
     // Policy pages are indexable on purpose: shoppers look for a store's returns terms before
     // buying, and payment providers check they exist and are reachable.
     ...POLICIES.map((policy) => `/legal/${policy.slug}`),
@@ -31,7 +32,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const productRoutes = products
     .filter((p) => p.isIndexable !== false)
     .map((p) => ({ url: `${baseUrl}/product/${p.slug}`, lastModified: new Date() }));
-  const guideRoutes = guides.map((g) => ({ url: `${baseUrl}/guides/${g.slug}`, lastModified: new Date() }));
+  const guideRoutes = guides.map((g) => ({ url: `${baseUrl}/journal/${g.slug}`, lastModified: new Date(g.updatedAt) }));
 
   return [...staticRoutes, ...categoryRoutes, ...productRoutes, ...guideRoutes];
 }
