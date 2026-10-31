@@ -1,4 +1,3 @@
-import Image from "next/image";
 import Link from "next/link";
 import CategoryCard from "@/components/CategoryCard";
 import HeroSlideshow from "@/components/HeroSlideshow";
@@ -6,17 +5,19 @@ import ProductCard from "@/components/ProductCard";
 import { getFeatureCategories } from "@/lib/data/categories";
 import { getProductsByCategory } from "@/lib/data/products";
 import { getHeroBanner } from "@/lib/data/cms";
+import { getGuides } from "@/lib/data/guides";
 
 export const dynamic = "force-dynamic";
 
 export default async function HomePage() {
   // Built from the database, not a fixed handle list, so a category added in admin — or one that
   // just got its first product — appears here without a code change.
-  const [featureCategories, newArrivals, bestSellers, heroBanner] = await Promise.all([
+  const [featureCategories, newArrivals, bestSellers, heroBanner, stories] = await Promise.all([
     getFeatureCategories(),
     getProductsByCategory("new-arrivals"),
     getProductsByCategory("best-sellers"),
     getHeroBanner(),
+    getGuides(),
   ]);
 
   return (
@@ -68,17 +69,24 @@ export default async function HomePage() {
       <section className="bg-ink-950 text-warm-50 py-24">
         <div className="container-page grid lg:grid-cols-2 gap-12 items-center">
           <div>
-            <p className="eyebrow text-stone-400 mb-4">The Journal</p>
-            <h2 className="font-serif text-4xl mb-6 leading-tight">Slow mornings, sun-warmed fabric, salt in the air.</h2>
+            <p className="eyebrow text-stone-400 mb-4">The Mira Journal</p>
+            <h2 className="font-serif text-4xl mb-6 leading-tight">Stories of style, texture, travel and the art of living beautifully.</h2>
             <p className="text-stone-300 leading-relaxed mb-8 max-w-md">
-              Style guides, care tips and packing lists for a boho, barefoot life — read the latest from the Mira &amp; Muse journal.
+              Capsule wardrobes, fabric know-how, garment care and packing for the coast — practical advice with an eye for the beautiful details.
             </p>
-            <Link href="/guides" className="btn-primary bg-warm-50 text-ink-950 hover:bg-stone-200">
-              Read the Guides
+            <Link href="/journal" className="btn-primary bg-warm-50 text-ink-950 hover:bg-stone-200">
+              Read the Journal
             </Link>
           </div>
-          <div className="relative aspect-[4/3] bg-ink-900">
-            <Image src="https://picsum.photos/seed/beach-journal/1000/750" alt="Mira & Muse lookbook" fill className="object-cover" />
+          {/* The latest stories, in place of the stock lookbook photo that stood here. */}
+          <div className="divide-y divide-ink-800 border-y border-ink-800">
+            {stories.slice(0, 3).map((story) => (
+              <Link key={story.slug} href={`/journal/${story.slug}`} className="group block py-6">
+                <p className="eyebrow text-stone-500 mb-2">{story.category}</p>
+                <p className="font-serif text-2xl leading-snug group-hover:text-accent transition-colors">{story.title}</p>
+                <p className="text-sm text-stone-400 mt-1">{story.excerpt}</p>
+              </Link>
+            ))}
           </div>
         </div>
       </section>
@@ -98,8 +106,8 @@ export default async function HomePage() {
       <section className="border-t border-stone-200 py-16">
         <div className="container-page grid sm:grid-cols-3 gap-10 text-center">
           <div>
-            <p className="eyebrow mb-2">Woven by Hand</p>
-            <p className="text-sm text-stone-500">Natural fibres and hand-dyed pieces across the catalogue.</p>
+            <p className="eyebrow mb-2">Pieces with Personality</p>
+            <p className="text-sm text-stone-500">Relaxed silhouettes, beautiful textures and considered details.</p>
           </div>
           <div>
             <p className="eyebrow mb-2">Made to Wander</p>

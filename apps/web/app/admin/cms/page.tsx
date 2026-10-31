@@ -22,11 +22,13 @@ export default async function AdminCmsPage() {
         </div>
       </div>
       <div>
-        <p className="text-sm font-medium mb-3">Guides</p>
+        <p className="text-sm font-medium mb-3">The Mira Journal</p>
         <div className="space-y-2">
           {guides.map((g) => (
             <div key={g.slug} className="border border-stone-200 p-3 flex justify-between text-sm">
-              <span>{g.title}</span>
+              <a href={`/journal/${g.slug}`} target="_blank" rel="noreferrer" className="underline">
+                {g.title}
+              </a>
               <button className="text-xs underline text-stone-400 cursor-not-allowed" disabled title="Editing isn't built yet">
                 Edit
               </button>

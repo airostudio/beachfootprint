@@ -20,7 +20,8 @@ const staticColumns = [
   {
     title: "About",
     links: [
-      { label: "Guides", href: "/guides" },
+      { label: "Our Story", href: "/about" },
+      { label: "The Mira Journal", href: "/journal" },
       { label: "Terms & Conditions", href: "/legal/terms" },
       { label: "Privacy Policy", href: "/legal/privacy" },
       { label: "Product Finder", href: "/product-finder" },
@@ -45,9 +46,8 @@ export default function Footer({ categories, freeShippingNote }: { categories: N
       <div className="container-page py-16 grid gap-12 sm:grid-cols-2 lg:grid-cols-4">
         <div>
           <Logo className="mb-4 text-warm-50" markClassName="h-10 w-10" />
-          <p className="text-sm text-stone-400 leading-relaxed max-w-xs">
-            Boho surf-culture apparel and accessories, woven and hand-dyed for warm sand and salt air.
-          </p>
+          <p className="text-sm text-stone-400 leading-relaxed max-w-xs">A little bohemian. A little beautiful. Entirely you.</p>
+          <p className="font-serif italic text-warm-100 mt-3">Find your muse. Wear your story.</p>
         </div>
         {columns.map((col) => (
           <div key={col.title}>

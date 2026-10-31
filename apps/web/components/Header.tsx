@@ -29,7 +29,7 @@ export default function Header({ categories }: { categories: NavCategory[] }) {
 
   return (
     <header className="sticky top-0 z-40 bg-warm-50/95 backdrop-blur border-b border-stone-200">
-      <div className="container-page flex h-16 items-center justify-between">
+      <div className="container-page flex h-16 items-center justify-between gap-6">
         <button
           className="lg:hidden text-sm tracking-widest2 uppercase"
           onClick={() => setMobileOpen((v) => !v)}
@@ -42,37 +42,6 @@ export default function Header({ categories }: { categories: NavCategory[] }) {
         <Link href="/" className="relative z-10 shrink-0 flex items-center text-ink-950" aria-label="Mira & Muse home">
           <Logo markClassName="h-8 w-8 sm:h-9 sm:w-9" wordClassName="text-xl sm:text-2xl" />
         </Link>
-
-        <nav className="hidden lg:flex items-center gap-7">
-          <Link href="/shop" className="text-sm tracking-wide text-ink-800 hover:text-ink-950 transition-colors">
-            Shop
-          </Link>
-          {categories.map((c) => (
-            <div key={c.handle} className="group relative">
-              <Link href={`/shop/${c.handle}`} className="text-sm tracking-wide text-ink-800 hover:text-ink-950 transition-colors py-2">
-                {c.name}
-              </Link>
-              {c.children && c.children.length > 0 && (
-                <div className="absolute left-0 top-full hidden group-hover:block group-focus-within:block pt-1">
-                  <div className="min-w-[10rem] bg-warm-50 border border-stone-200 shadow-sm py-2">
-                    {c.children.map((child) => (
-                      <Link
-                        key={child.handle}
-                        href={`/shop/${child.handle}`}
-                        className="block px-4 py-1.5 text-sm text-ink-700 hover:text-ink-950 hover:bg-warm-100 whitespace-nowrap"
-                      >
-                        {child.name}
-                      </Link>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          ))}
-          <Link href="/guides" className="text-sm tracking-wide text-ink-800 hover:text-ink-950 transition-colors">
-            Guides
-          </Link>
-        </nav>
 
         <div className="flex items-center gap-5">
           {iconLinks.map((item) => (
@@ -89,6 +58,43 @@ export default function Header({ categories }: { categories: NavCategory[] }) {
           </Link>
         </div>
       </div>
+
+      <nav className="hidden lg:flex container-page flex-wrap items-center justify-center gap-x-8 gap-y-1 py-3 border-t border-stone-200/70">
+        <Link href="/shop" className="text-sm tracking-wide text-ink-800 hover:text-ink-950 transition-colors">
+          Shop
+        </Link>
+        {categories.map((c) => (
+          <div key={c.handle} className="group relative">
+            <Link
+              href={`/shop/${c.handle}`}
+              className="text-sm tracking-wide text-ink-800 hover:text-ink-950 transition-colors py-2 whitespace-nowrap"
+            >
+              {c.name}
+            </Link>
+            {c.children && c.children.length > 0 && (
+              <div className="absolute left-0 top-full hidden group-hover:block group-focus-within:block pt-1">
+                <div className="min-w-[10rem] bg-warm-50 border border-stone-200 shadow-sm py-2">
+                  {c.children.map((child) => (
+                    <Link
+                      key={child.handle}
+                      href={`/shop/${child.handle}`}
+                      className="block px-4 py-1.5 text-sm text-ink-700 hover:text-ink-950 hover:bg-warm-100 whitespace-nowrap"
+                    >
+                      {child.name}
+                    </Link>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        ))}
+        <Link href="/journal" className="text-sm tracking-wide text-ink-800 hover:text-ink-950 transition-colors">
+          Journal
+        </Link>
+        <Link href="/about" className="text-sm tracking-wide text-ink-800 hover:text-ink-950 transition-colors">
+          Our Story
+        </Link>
+      </nav>
 
       {mobileOpen && (
         <nav className="lg:hidden border-t border-stone-200 bg-warm-50">
@@ -133,8 +139,11 @@ export default function Header({ categories }: { categories: NavCategory[] }) {
                 </Link>
               ),
             )}
-            <Link href="/guides" className="text-sm py-2" onClick={() => setMobileOpen(false)}>
-              Guides
+            <Link href="/journal" className="text-sm py-2" onClick={() => setMobileOpen(false)}>
+              Journal
+            </Link>
+            <Link href="/about" className="text-sm py-2" onClick={() => setMobileOpen(false)}>
+              Our Story
             </Link>
             {iconLinks.map((item) => (
               <Link key={item.href} href={item.href} className="text-sm py-2" onClick={() => setMobileOpen(false)}>

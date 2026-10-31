@@ -1,6 +1,13 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   transpilePackages: ["@trend/core", "@trend/db"],
+  // The journal used to live at /guides — keep old links and search results working.
+  async redirects() {
+    return [
+      { source: "/guides", destination: "/journal", permanent: true },
+      { source: "/guides/:slug", destination: "/journal/:slug", permanent: true },
+    ];
+  },
   images: {
     remotePatterns: [{ protocol: "https", hostname: "**" }],
   },
