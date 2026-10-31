@@ -1,4 +1,5 @@
 import "server-only";
+import { bufferOrDefault } from "../stock";
 import { db, getTenantId } from "./client";
 
 /**
@@ -58,5 +59,19 @@ export async function getFreeShippingNote(): Promise<string | null> {
     return `Free shipping over ${new Intl.NumberFormat("en-US", { style: "currency", currency, maximumFractionDigits: 0 }).format(threshold / 100)}.`;
   } catch {
     return null;
+  }
+}
+
+/**
+ * Units held back from AliExpress stock (see lib/stock.ts). Never throws —
+ * a missing setting (or column) falls back to the default rather than taking the storefront down.
+ */
+export async function getSupplierStockBuffer(): Promise<number> {
+  try {
+    const tenantId = await getTenantId();
+    const { data } = await db().from("tenant_settings").select("supplier_stock_buffer").eq("tenant_id", tenantId).maybeSingle();
+    return bufferOrDefault(data?.supplier_stock_buffer);
+  } catch {
+    return bufferOrDefault(undefined);
   }
 }

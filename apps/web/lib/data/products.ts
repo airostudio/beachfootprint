@@ -2,6 +2,8 @@ import "server-only";
 import { db, getTenantId } from "./client";
 import { NEW_ARRIVALS_HANDLE, newArrivalsCutoffIso } from "../newArrivals";
 import { isDisplayableImageUrl } from "../import/imageUrls";
+import { sellableStock } from "../stock";
+import { getSupplierStockBuffer } from "./settings";
 import type { ProductDetail, ProductSpecGroup, ProductSummary, ProductType, ProductVariantSummary } from "../types";
 
 const PRODUCT_TYPE_MAP: Record<string, ProductType> = {
@@ -50,14 +52,23 @@ async function hydrate(productIds: string[]): Promise<Hydrated> {
   if (productIds.length === 0) return empty;
 
   const supabase = db();
-  const [variantsRes, mediaRes, catLinksRes, reviewsRes] = await Promise.all([
-    supabase.from("product_variants").select("id, product_id, price, compare_at, currency, is_active").in("product_id", productIds),
+  const [variantsRes, mediaRes, catLinksRes, reviewsRes, stockBuffer] = await Promise.all([
+    supabase.from("product_variants").select("id, product_id, price, compare_at, currency, is_active, supplier").in("product_id", productIds),
     supabase.from("product_media").select("product_id, url, alt, position").in("product_id", productIds).order("position"),
     supabase.from("product_categories").select("product_id, categories(handle)").in("product_id", productIds),
     supabase.from("reviews").select("product_id, rating").in("product_id", productIds).eq("is_approved", true),
+    getSupplierStockBuffer(),
   ]);
 
-  const variantRows = (variantsRes.data ?? []) as { id: string; product_id: string; price: number; compare_at: number | null; currency: string; is_active: boolean }[];
+  const variantRows = (variantsRes.data ?? []) as {
+    id: string;
+    product_id: string;
+    price: number;
+    compare_at: number | null;
+    currency: string;
+    is_active: boolean;
+    supplier: string | null;
+  }[];
   for (const productId of productIds) {
     const candidates = variantRows.filter((v) => v.product_id === productId && v.is_active);
     const pool = candidates.length > 0 ? candidates : variantRows.filter((v) => v.product_id === productId);
@@ -75,7 +86,7 @@ async function hydrate(productIds: string[]): Promise<Hydrated> {
     const { data: invRows } = await supabase.from("inventory_items").select("variant_id, stock_on_hand").in("variant_id", variantIds);
     const stockByVariant = new Map(((invRows ?? []) as { variant_id: string; stock_on_hand: number }[]).map((r) => [r.variant_id, r.stock_on_hand]));
     for (const v of variantRows) {
-      const stock = stockByVariant.get(v.id) ?? 0;
+      const stock = v.is_active ? sellableStock(stockByVariant.get(v.id) ?? 0, v.supplier, stockBuffer) : 0;
       empty.stockOnHandByProduct.set(v.product_id, (empty.stockOnHandByProduct.get(v.product_id) ?? 0) + stock);
     }
   }
@@ -435,16 +446,19 @@ export async function getProductBySlug(slug: string): Promise<ProductDetail | un
   if (!data) return undefined;
   const row = data as ProductRow;
 
-  const [hydrated, specsRes, gallery, linksRes, variantsRes] = await Promise.all([
+  const [hydrated, specsRes, gallery, linksRes, variantsRes, stockBuffer] = await Promise.all([
     hydrate([row.id]),
     supabase.from("product_specs").select("group, label, value, position").eq("product_id", row.id).order("position"),
     supabase.from("product_media").select("url, alt, position").eq("product_id", row.id).order("position"),
     supabase.from("compatibility_links").select("to_product_id, relation_type").eq("from_product_id", row.id),
     supabase
       .from("product_variants")
-      .select("id, title, sku, price, compare_at, currency, is_active, image_url, option1_name, option1_value, option2_name, option2_value, option3_name, option3_value")
+      .select(
+        "id, title, sku, price, compare_at, currency, is_active, image_url, supplier, option1_name, option1_value, option2_name, option2_value, option3_name, option3_value",
+      )
       .eq("product_id", row.id)
       .order("price"),
+    getSupplierStockBuffer(),
   ]);
 
   interface VariantRow {
@@ -456,6 +470,7 @@ export async function getProductBySlug(slug: string): Promise<ProductDetail | un
     currency: string;
     is_active: boolean;
     image_url: string | null;
+    supplier: string | null;
     option1_name: string | null;
     option1_value: string | null;
     option2_name: string | null;
@@ -486,7 +501,7 @@ export async function getProductBySlug(slug: string): Promise<ProductDetail | un
     ]
       .filter(([, value]) => Boolean(value))
       .map(([name, value]) => ({ name: name ?? "Option", value: value as string })),
-    inStock: v.is_active && (stockByVariant.get(v.id) ?? 0) > 0,
+    inStock: v.is_active && sellableStock(stockByVariant.get(v.id) ?? 0, v.supplier, stockBuffer) > 0,
     imageUrl: v.image_url && isDisplayableImageUrl(v.image_url) ? v.image_url : undefined,
   }));
 

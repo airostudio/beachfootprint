@@ -140,6 +140,21 @@ async function engineFetch<T>(path: string, init?: RequestInit): Promise<T> {
   return body as T;
 }
 
+export interface LiveStockItem {
+  aliexpressProductId: string;
+  aliexpressSkuId: string;
+  /** AliExpress's stock right now; null when the supplier no longer offers that SKU. Absent if it couldn't be read. */
+  stockOnHand?: number | null;
+}
+
+/**
+ * Asks AliExpress, through the engine, for the current stock of specific SKUs — used at checkout so
+ * nobody pays for something the supplier has already sold out of. Short timeout: checkout waits on it.
+ */
+export function getLiveStock(items: { aliexpressProductId: string; aliexpressSkuId: string }[], timeoutMs = 8000): Promise<{ items: LiveStockItem[] }> {
+  return engineFetch("/v1/products/stock", { method: "POST", body: JSON.stringify({ items }), signal: AbortSignal.timeout(timeoutMs) });
+}
+
 export function importProduct(params: { aliexpressProductId: string; pricingRuleId?: string }): Promise<ImportProductResult> {
   return engineFetch("/v1/products/import", { method: "POST", body: JSON.stringify(params) });
 }

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { createServiceRoleSupabaseClient } from "@trend/db";
 import { resolveTenantId } from "@/lib/import/tenant";
+import { DEFAULT_SUPPLIER_STOCK_BUFFER } from "@/lib/stock";
 
 export const runtime = "nodejs";
 // Never prerender or cache an admin endpoint: Next will happily statically optimise a
@@ -11,7 +12,7 @@ export const dynamic = "force-dynamic";
 
 // Match tenant_settings' own column defaults (supabase/migrations/0007_checkout_settings.sql) —
 // what checkout falls back to when a tenant has no settings row yet.
-const DEFAULTS = { shippingFlatRateCents: 995, freeShippingThresholdCents: 10000, taxRatePercent: 0 };
+const DEFAULTS = { shippingFlatRateCents: 995, freeShippingThresholdCents: 10000, taxRatePercent: 0, supplierStockBuffer: DEFAULT_SUPPLIER_STOCK_BUFFER };
 
 /** Shipping/tax as an admin actually configures them, not the raw column names. */
 export async function GET() {
@@ -20,7 +21,7 @@ export async function GET() {
 
   const { data } = await supabase
     .from("tenant_settings")
-    .select("shipping_flat_rate_cents, free_shipping_threshold_cents, tax_rate_percent")
+    .select("shipping_flat_rate_cents, free_shipping_threshold_cents, tax_rate_percent, supplier_stock_buffer")
     .eq("tenant_id", tenantId)
     .maybeSingle();
 
@@ -28,6 +29,7 @@ export async function GET() {
     shippingFlatRateCents: data?.shipping_flat_rate_cents ?? DEFAULTS.shippingFlatRateCents,
     freeShippingThresholdCents: data?.free_shipping_threshold_cents ?? DEFAULTS.freeShippingThresholdCents,
     taxRatePercent: data?.tax_rate_percent ?? DEFAULTS.taxRatePercent,
+    supplierStockBuffer: data?.supplier_stock_buffer ?? DEFAULTS.supplierStockBuffer,
   });
 }
 
@@ -35,6 +37,7 @@ const bodySchema = z.object({
   shippingFlatRateCents: z.number().int().min(0),
   freeShippingThresholdCents: z.number().int().min(0),
   taxRatePercent: z.number().min(0).max(100),
+  supplierStockBuffer: z.number().int().min(0).max(50).optional(),
 });
 
 export async function PUT(request: Request) {
@@ -49,6 +52,7 @@ export async function PUT(request: Request) {
     shipping_flat_rate_cents: input.shippingFlatRateCents,
     free_shipping_threshold_cents: input.freeShippingThresholdCents,
     tax_rate_percent: input.taxRatePercent,
+    ...(input.supplierStockBuffer === undefined ? {} : { supplier_stock_buffer: input.supplierStockBuffer }),
   };
 
   // Try an update first: most tenants already have a tenant_settings row (branding etc.). Only

@@ -6,6 +6,7 @@ interface CheckoutSettings {
   shippingFlatRateCents: number;
   freeShippingThresholdCents: number;
   taxRatePercent: number;
+  supplierStockBuffer: number;
 }
 
 /** cents <-> a plain dollar string for a text input, without floating-point surprises. */
@@ -98,6 +99,22 @@ export default function CheckoutSettingsCard() {
             }}
             className="w-full border border-stone-300 px-3 py-2 text-sm"
           />
+        </label>
+        <label className="text-sm">
+          <span className="block text-xs text-stone-500 mb-1">AliExpress stock buffer (units)</span>
+          <input
+            type="number"
+            min={0}
+            max={50}
+            step={1}
+            defaultValue={settings.supplierStockBuffer}
+            onBlur={(e) => save({ ...settings, supplierStockBuffer: Math.min(50, Math.max(0, Math.floor(Number(e.target.value) || 0))) })}
+            className="w-full border border-stone-300 px-3 py-2 text-sm"
+          />
+          <span className="block text-xs text-stone-500 mt-1">
+            Units held back from each AliExpress colour/size, so it shows as sold out before the supplier&rsquo;s last few go. 2 means a size with 2
+            or fewer left can&rsquo;t be bought.
+          </span>
         </label>
       </div>
 
